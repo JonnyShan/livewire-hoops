@@ -195,7 +195,7 @@ export function buildCrowd(group, { quality = 'med', ledTex = null } = {}) {
   tex.colorSpace = THREE.SRGBColorSpace;
   tex.anisotropy = 4;
   const uniforms = {
-    uMap: { value: tex }, uTime: { value: 0 }, uCheer: { value: 0 }, uBounce: { value: 0 }, uLight: { value: 0.4 },
+    uMap: { value: tex }, uTime: { value: 0 }, uCheer: { value: 0 }, uBounce: { value: 0 }, uLight: { value: 0.345 },
     uCam: { value: new THREE.Vector3() },
     uCard: { value: new THREE.Vector4(ATLAS.cardW, ATLAS.cardH, ATLAS.headY, ATLAS.cols) },
     uGrid: { value: new THREE.Vector4(ATLAS.cols, ATLAS.rows, STAND_HEAD - SEAT_HEAD, ATLAS.standers - 0.5) },
