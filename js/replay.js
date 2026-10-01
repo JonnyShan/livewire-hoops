@@ -290,10 +290,13 @@ export class Replay {
       c.width = W; c.height = H;
       const g = c.getContext('2d');
       const stream = c.captureStream(30);
-      const ctx = this.sound.ctx;
-      if (ctx && this.sound.master && ctx.createMediaStreamDestination) {
-        if (!this.sound.__clipDest) { this.sound.__clipDest = ctx.createMediaStreamDestination(); this.sound.master.connect(this.sound.__clipDest); }
-        for (const tr of this.sound.__clipDest.stream.getAudioTracks()) stream.addTrack(tr);
+      const ctx = this.sound.ctx, master = this.sound.master;
+      // the game's sound goes into the clip only while it records
+      let dest = null;
+      if (ctx && master && ctx.createMediaStreamDestination) {
+        dest = ctx.createMediaStreamDestination();
+        master.connect(dest);
+        for (const tr of dest.stream.getAudioTracks()) stream.addTrack(tr);
       }
       const types = ['video/mp4;codecs=avc1.42E01E,mp4a.40.2', 'video/mp4', 'video/webm;codecs=vp9,opus', 'video/webm;codecs=vp8,opus', 'video/webm'];
       const type = types.find((t) => MR.isTypeSupported && MR.isTypeSupported(t)) || '';
@@ -301,6 +304,8 @@ export class Replay {
       const chunks = [];
       mr.ondataavailable = (e) => { if (e.data && e.data.size) chunks.push(e.data); };
       mr.onstop = () => {
+        for (const tr of stream.getTracks()) tr.stop();
+        if (dest) try { master.disconnect(dest); } catch (e) { /* already gone */ }
         const mime = (mr.mimeType || type || 'video/webm').split(';')[0];
         if (!chunks.length) return;
         const blob = new Blob(chunks, { type: mime });

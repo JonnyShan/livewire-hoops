@@ -95,7 +95,6 @@ function resize() {
   camera.updateProjectionMatrix();
   resolution.set(w * renderer.getPixelRatio(), h * renderer.getPixelRatio());
   if (net) net.mat.resolution.copy(resolution);
-  $('rotateHint').hidden = !(w < h && !$('hud').hidden);
 }
 window.addEventListener('resize', () => renderer && resize());
 
@@ -364,16 +363,17 @@ function frame(now) {
   const dt = Math.min(0.05, real);
   last = now;
   if (window.__hw && window.__hw.manual) return;   // stepped externally (capture/testing)
+  const t0 = performance.now();
   tick(dt);
   govern(real);
-  if (dbg) dbg.frame(real);
+  if (dbg) dbg.frame(real, performance.now() - t0);
 }
 
 // Frame-rate governor (Auto quality only): if a phone can't hold about 50 fps
 // in play, render fewer pixels; hand them back when there's headroom.
-const gov = { t: 0, n: 0, scale: 1 };
+const gov = { t: 0, n: 0, scale: 1, lock: false };
 function govern(real) {
-  if (settings.quality !== 'auto' || !game || paused || real > 0.5) { gov.t = gov.n = 0; return; }
+  if (gov.lock || settings.quality !== 'auto' || !game || paused || real > 0.5) { gov.t = gov.n = 0; return; }
   gov.t += real; gov.n++;
   if (gov.t < 2.5) return;
   const fps = gov.n / gov.t;
@@ -448,9 +448,12 @@ let dbg = null;
 if (/[?&#]debug\b/.test(location.search + location.hash)) {
   import('./debug.js').then((m) => {
     dbg = m.startDebug({
-      get renderer() { return renderer; }, get game() { return game; }, get paused() { return paused; },
+      get renderer() { return renderer; }, get game() { return game; }, get paused() { return paused; }, get arena() { return arena; },
       get replayActive() { return replay.active; }, get scale() { return gov.scale; }, get tier() { return qualityTier(); },
-      settings, canvas, timing, ldBall, sound, replay,
+      settings, canvas, timing, ldBall, sound, replay, scene,
+      start: () => startMatch(),
+      lockScale(on) { gov.lock = on; gov.t = gov.n = 0; },
+      setScale(s) { gov.scale = s; renderer.setPixelRatio(basePixelRatio() * s); resize(); },
     });
   }).catch((e) => console.warn('debug panel failed', e));
 }

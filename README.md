@@ -1,6 +1,6 @@
 # Hoops 1v1
 
-Live at **https://livewire.hoops.gamify.com**. This repo is the hosted copy (GitHub Pages). The source lives in [JonnyShan/Multi-View-Screen](https://github.com/JonnyShan/Multi-View-Screen) under `hardwood/`; this copy is from commit `b59d5d3`.
+Live at **https://livewire.hoops.gamify.com**. This repo is the hosted copy (GitHub Pages). The source lives in [JonnyShan/Multi-View-Screen](https://github.com/JonnyShan/Multi-View-Screen) under `hardwood/`; this copy is from commit `04cc891`.
 
 A 1-on-1 half-court basketball game for phones, built with three.js. Open `index.html` from any static web server.
 
@@ -44,7 +44,19 @@ Add `?debug` to the address (for example `https://livewire.hoops.gamify.com/?deb
 - whether the loading ball video played, and the audio state
 - the device and GPU
 
-While you play, the panel shows only the essentials. Pause the game or reach the end screen to see everything. **Copy report** copies the full details, including the frame-time histogram.
+While you play, the panel shows only the essentials. Pause the game or reach the end screen to see everything. **Copy report** copies the full details, including the frame-time histogram and when the long frames happened.
+
+**Bench** starts a fresh CPU-vs-CPU game and measures 6 seconds each of:
+
+- the game as is
+- no shadows
+- no floor reflection
+- the players left out of the reflection
+- no crowd
+- 70% resolution
+- the game as is again, to show whether the phone slowed down as it warmed up
+
+Each result shows the frame rate and how long the game's script took per frame. If switching something off raises the frame rate, that is what the phone is short of. If the script time is close to the frame time, the CPU is the limit rather than the GPU.
 
 ## Files
 

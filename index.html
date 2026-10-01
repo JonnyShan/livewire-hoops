@@ -127,7 +127,6 @@ button:focus-visible { outline: 2px solid var(--leather-hi); outline-offset: 3px
 .stats { display: grid; grid-template-columns: 1fr auto auto; gap: 4px 14px; font: 600 14px/1.2 var(--body); font-variant-numeric: tabular-nums; }
 .stats .h { color: var(--dim); font: 700 11px/1 var(--display); letter-spacing: .16em; }
 
-.rotate { position: fixed; z-index: 4; left: 50%; top: calc(var(--sat) + 96px); transform: translateX(-50%); font: 700 12px/1 var(--display); letter-spacing: .18em; background: var(--panel); padding: 8px 12px; border: 1px solid var(--line); pointer-events: none; }
 /* replay: letterbox, tag, skip hint, a yellow wipe in and out */
 #replayUI { position: fixed; inset: 0; z-index: 6; pointer-events: auto; touch-action: none; }
 #replayUI .bar { position: absolute; left: 0; right: 0; height: 9vh; background: #000; }
@@ -156,6 +155,18 @@ button:focus-visible { outline: 2px solid var(--leather-hi); outline-offset: 3px
   .wordmark { font-size: clamp(56px, 13vh + 40px, 120px); }
   .title .col { gap: 12px; }
 }
+/* narrow phones in portrait: a tighter score bug, so it clears the pause button */
+@media (max-width: 480px) {
+  .bug .side { gap: 5px; padding: 3px 7px 3px 4px; }
+  .bug .side.r { padding: 3px 4px 3px 7px; }
+  .bug img { width: 22px; height: 22px; }
+  .bug .abbr { font-size: 13px; letter-spacing: .05em; }
+  .bug .pts { font-size: 25px; }
+  .bug .mid { padding: 2px 8px; min-width: 50px; }
+  .bug .sc { font-size: 22px; }
+  .bug .to { font-size: 9px; }
+}
+@media (max-width: 410px) { .bug img { display: none; } }
 @media (orientation: portrait) {
   .final { grid-template-columns: 1fr; }
   .final .ph { min-height: 180px; }
@@ -190,7 +201,6 @@ button:focus-visible { outline: 2px solid var(--leather-hi); outline-offset: 3px
     <button class="btn small" id="btnB">MOVE</button>
   </div>
 </div>
-<div class="rotate" id="rotateHint" hidden>TURN YOUR PHONE SIDEWAYS FOR THE FULL COURT</div>
 
 <section class="screen title" id="scrTitle" hidden>
   <div class="art"></div>

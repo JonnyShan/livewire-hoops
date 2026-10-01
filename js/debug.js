@@ -1,7 +1,9 @@
 // Performance panel for testing on real phones. Open the game with ?debug and
 // play a game: it shows the frame rate, the quality Auto settled on, load
 // times and the device, and keeps a summary of the whole session to screenshot
-// or copy. None of this loads unless asked for.
+// or copy. Bench plays a CPU-vs-CPU game and switches the costly parts off one
+// at a time, to show what the phone is short of. None of this loads unless
+// asked for.
 
 const BUCKETS = 2001;             // frame-time histogram, 1 ms per bucket (up to the 2 s stall cutoff)
 
@@ -85,32 +87,42 @@ export function startDebug(hw) {
   document.head.appendChild(css);
   const el = document.createElement('div');
   el.id = 'dbg';
-  el.innerHTML = '<div class="bar"><b></b><button data-a="copy">Copy report</button><button data-a="min">Hide</button></div><pre></pre>';
+  el.innerHTML = '<div class="bar"><b></b><button data-a="copy">Copy report</button><button data-a="bench">Bench</button><button data-a="min">Hide</button></div><pre></pre>';
   document.body.appendChild(el);
   const head = el.querySelector('b'), pre = el.querySelector('pre');
 
   const play = newStats(), replays = newStats();
-  const curve = [];                 // play fps per 10 s (shows a phone slowing as it heats up)
-  const seg = { n: 0, t: 0 };
-  const scaleT = new Map();         // seconds of play at each render scale
+  const curve = [];                 // play fps per 10 s (shows a phone slowing as it heats up); * = a replay ran
+  const seg = { n: 0, t: 0, replay: false };
+  const scaleT = new Map();         // render scale -> { t, n } in play
+  const hitches = [];               // the long frames in play: when, how long, what was going on
   const now = { n: 0, t: 0, worst: 0, fps: 0, worstMs: 0 };
-  let renderer = null, gpu = '?', draws = 0, tris = 0, sinceText = 0;
+  let renderer = null, gpu = '?', draws = 0, tris = 0, sinceText = 0, cpu = 0, lastReplay = -1e9;
+  let bench = null, benchOut = '';
 
-  function frame(real) {
+  // real: seconds since the last frame; js: ms the frame's script took (game, scene and draw calls,
+  // not the GPU's own work, which runs after)
+  function frame(real, js = 0) {
     const r = hw.renderer;
     if (r && r !== renderer) { renderer = r; r.info.autoReset = false; gpu = gpuName(r); }
     if (r) { draws = r.info.render.calls; tris = r.info.render.triangles; r.info.reset(); }
     if (real > 2) return;           // the page was suspended (the game pauses itself when hidden)
     now.n++; now.t += real; now.worst = Math.max(now.worst, real);
     if (now.t >= 0.5) { now.fps = now.n / now.t; now.worstMs = now.worst * 1000; now.n = now.t = now.worst = 0; }
-    if (hw.game && !hw.paused) {
-      if (hw.replayActive) add(replays, real);
+    const t = performance.now() / 1000;
+    if (bench) { if (bench.on) { bench.n++; bench.t += real; bench.js += js; } }
+    else if (hw.game && !hw.paused) {
+      if (hw.replayActive) { add(replays, real); lastReplay = t; seg.replay = true; }
       else {
         add(play, real);
-        const k = hw.scale.toFixed(2);
-        scaleT.set(k, (scaleT.get(k) || 0) + real);
+        cpu += js;
+        const k = hw.scale.toFixed(2), sc = scaleT.get(k) || { t: 0, n: 0 };
+        sc.t += real; sc.n++; scaleT.set(k, sc);
         seg.n++; seg.t += real;
-        if (seg.t >= 10) { curve.push(seg.n / seg.t); seg.n = seg.t = 0; }
+        if (seg.t >= 10) { curve.push([seg.n / seg.t, seg.replay]); seg.n = seg.t = 0; seg.replay = false; }
+        if (real > 0.05 && hitches.length < 16) {
+          hitches.push(`${clock(play.t)} ${f0(real * 1000)}ms${t - lastReplay < 2 ? ' after replay' : ''}${hw.game.over ? ' game over' : ''}`);
+        }
       }
     }
     sinceText += real;
@@ -129,10 +141,11 @@ export function startDebug(hw) {
     L.push(`draws ${draws} · ${f0(tris / 1000)}k tris · ${renderer ? renderer.info.memory.textures : 0} textures`);
     if (play.n) {
       L.push(`play ${clock(play.t)} · avg ${f0(play.n / play.t)} · 1% low ${f0(low1(play))} · hitches ${play.hitches}`);
-      const sc = [...scaleT].sort((a, b) => b[0] - a[0]).map(([k, t]) => `${k}:${f0(t / play.t * 100)}%`).join(' ');
-      L.push(`under 45 fps ${f0(under(play, 45) * 100)}% · scale ${sc}`);
-      if (curve.length) L.push(`fps per 10 s ${spark(curve)}${full ? '  ' + curve.map(f0).join(' ') : ''}`);
+      L.push(`under 45 fps ${f0(under(play, 45) * 100)}% · script ${(cpu / play.n).toFixed(1)} ms per frame`);
+      L.push(`scale (time, fps) ${[...scaleT].sort((a, b) => b[0] - a[0]).map(([k, v]) => `${k}: ${f0(v.t / play.t * 100)}% ${f0(v.n / v.t)}`).join(' · ')}`);
+      if (curve.length) L.push(`fps per 10 s ${spark(curve.map((c) => c[0]))}${full ? '  ' + curve.map(([v, r]) => f0(v) + (r ? '*' : '')).join(' ') : ''}`);
     } else L.push('play: start a game to measure');
+    if (benchOut) L.push(benchOut);
     const clip = hw.replay.clip;
     const rec = clip ? `${clip.blob.type || '?'} ${mb(clip.blob.size)}` : window.MediaRecorder ? 'none yet' : 'unsupported';
     L.push(`replays ${replays.n ? `avg ${f0(replays.n / replays.t)} · 1% low ${f0(low1(replays))}` : 'none yet'} · clip ${rec}`);
@@ -147,6 +160,7 @@ export function startDebug(hw) {
     const g = gpu.replace(/^ANGLE \((.*)\)$/, '$1').replace(/, Unspecified Version|, SwiftShader driver/, '');
     L.push(`GPU ${full || g.length < 56 ? g : g.slice(0, 54) + '…'}`);
     if (full) {
+      if (hitches.length) L.push(`long frames ${hitches.join(' · ')}`);
       L.push(`frame times in play (ms:count) ${[...play.hist].map((n, i) => (n ? `${i}:${n}` : '')).filter(Boolean).join(' ')}`);
       L.push(`page ${location.href}`, `ua ${navigator.userAgent}`, `at ${new Date().toISOString()}`);
     }
@@ -156,7 +170,7 @@ export function startDebug(hw) {
   function render() {
     const fps = now.fps;
     head.className = fps >= 55 ? 'g' : fps >= 40 ? 'a' : 'r';
-    head.textContent = `${f0(fps)} fps · worst ${f0(now.worstMs)} ms`;
+    head.textContent = `${f0(fps)} fps · worst ${f0(now.worstMs)} ms${bench ? ` · ${bench.label}` : ''}`;
     const playing = hw.game && !hw.paused && !hw.game.over;
     if (!el.classList.contains('min')) pre.textContent = lines(false, playing).join('\n');
   }
@@ -165,6 +179,7 @@ export function startDebug(hw) {
     const b = e.target.closest('button');
     if (!b) return;
     if (b.dataset.a === 'min') { el.classList.toggle('min'); b.textContent = el.classList.contains('min') ? 'Show' : 'Hide'; render(); return; }
+    if (b.dataset.a === 'bench') { runBench(b); return; }
     const text = `Livewire Hoops debug\n${head.textContent}\n${lines(true).join('\n')}`;
     let ok = false;
     try { await navigator.clipboard.writeText(text); ok = true; } catch (err) {
@@ -177,6 +192,61 @@ export function startDebug(hw) {
     b.textContent = ok ? 'Copied' : 'Copy failed: screenshot';
     setTimeout(() => { b.textContent = 'Copy report'; }, 2500);
   });
+
+  // ---------- bench ----------
+  // A fresh CPU-vs-CPU game (no replays), measured for 6 s with each costly
+  // part switched off in turn; the plain setup runs first and last, so a phone
+  // that heats up in between shows as the two not matching.
+  const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+  async function runBench(btn) {
+    if (bench) return;
+    btn.disabled = true;
+    bench = { label: 'Bench: starting', on: false, n: 0, t: 0, js: 0 };
+    render();
+    await hw.start();
+    const g = hw.game, R = hw.renderer, scene = hw.scene, refl = hw.arena.reflector;
+    const hl = g.onHighlight, to = g.to;
+    g.autoplay = true;
+    g.onHighlight = null;
+    g.to = 999;                         // no final buzzer mid-bench
+    hw.lockScale(true);
+    const scale0 = hw.scale;
+    hw.setScale(1);
+    const recompile = () => scene.traverse((o) => { if (o.material) for (const m of [].concat(o.material)) m.needsUpdate = true; });
+    let fans = null;
+    scene.traverse((o) => { if (!fans && o.isMesh && o.geometry.isInstancedBufferGeometry) fans = o; });
+    const skins = g.players.map((p) => p.skin && p.skin.mesh).filter(Boolean);
+    const steps = [
+      ['as is'],
+      ['no shadows', () => { R.shadowMap.enabled = false; recompile(); }, () => { R.shadowMap.enabled = true; recompile(); }],
+      ['no floor reflection', () => { if (refl) refl.visible = false; }, () => { if (refl) refl.visible = true; }],
+      // layer 1 is drawn by the main camera only, so the players drop out of the reflection
+      ['players not reflected', () => skins.forEach((m) => m.layers.set(1)), () => skins.forEach((m) => m.layers.set(0))],
+      ['no crowd', () => { if (fans) fans.visible = false; }, () => { if (fans) fans.visible = true; }],
+      ['resolution 70%', () => hw.setScale(0.7), () => hw.setScale(1)],
+      ['as is again'],
+    ];
+    const out = [];
+    for (let i = 0; i < steps.length; i++) {
+      const [name, on, off] = steps[i];
+      bench.label = `Bench ${i + 1}/${steps.length}: ${name}`;
+      if (on) on();
+      await wait(1500);                 // shaders compile, the frame rate settles
+      Object.assign(bench, { on: true, n: 0, t: 0, js: 0 });
+      await wait(6000);
+      bench.on = false;
+      out.push(`${name} ${f0(bench.n / bench.t)} fps ${(bench.js / Math.max(1, bench.n)).toFixed(1)} ms`);
+      if (off) off();
+    }
+    benchOut = `bench (fps, script ms) ${out.join(' · ')}`;
+    if (hw.game === g) { g.autoplay = false; g.onHighlight = hl; g.to = to; }
+    hw.setScale(scale0);
+    hw.lockScale(false);
+    bench = null;
+    btn.disabled = false;
+    btn.textContent = 'Bench done';
+    render();
+  }
 
   return { frame, report: () => lines(true).join('\n') };
 }
