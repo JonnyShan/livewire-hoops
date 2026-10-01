@@ -15,6 +15,7 @@ import { Input } from './input.js';
 import { installGrade, makeGradePass, loadArenaLight } from './look.js';
 import { onProgress } from './progress.js';
 import { Replay, shareClip } from './replay.js';
+import { playMark } from './lwmark.js';
 
 installGrade();
 
@@ -221,12 +222,15 @@ if (matchMedia('(prefers-reduced-motion: reduce)').matches) ldBall.pause();
 function showLoader() {
   const l = $('loading'); l.hidden = false; l.classList.remove('out');
   if (!matchMedia('(prefers-reduced-motion: reduce)').matches) ldBall.play().catch(() => {});
+  playMark(l, 'build');
 }
 function hideLoader() {
   const l = $('loading');
   if (l.hidden || l.classList.contains('out')) return;
   l.classList.add('out');
   setTimeout(() => { if (l.classList.contains('out')) { l.hidden = true; ldBall.pause(); } }, 480);
+  // the title shows through as the loading screen fades: build the Livewire mark in as it does
+  if (!$('scrTitle').hidden) setTimeout(() => playMark($('scrTitle'), 'build'), 200);
 }
 $('goPlay').onclick = async () => {
   sound.unlock(); sound.setEnabled(settings.sound);
@@ -309,6 +313,7 @@ function endToMenu() {
   $('hud').hidden = true;
   $('pad').hidden = true;
   show('scrTitle');
+  playMark($('scrTitle'), 'build');
   resize();
 }
 
