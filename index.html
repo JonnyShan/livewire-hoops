@@ -184,12 +184,27 @@ button:focus-visible { outline: 2px solid var(--leather-hi); outline-offset: 3px
   .final .ph::after { background: linear-gradient(0deg, var(--panel-solid), transparent 50%); }
   .final .txt { padding: 0 18px 18px; }
 }
-@media (prefers-reduced-motion: reduce) { .callout.show, .tag.show { animation-duration: .01s; } }
+/* phones play in portrait only: held sideways, the game is covered (and paused, main.js) */
+.turn { display: none; }
+@media (pointer: coarse) and (orientation: landscape) and (max-height: 520px) {
+  .turn { position: fixed; inset: 0; z-index: 30; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px;
+    padding: 24px; background: var(--ink); color: var(--chalk); text-align: center; }
+  .turn svg { width: 64px; height: 64px; color: var(--leather); animation: turnup 2.4s ease-in-out infinite; }
+  .turn p { margin: 0; font: 800 24px/1 var(--display); letter-spacing: .14em; text-transform: uppercase; }
+  .turn small { font: 500 14px/1.3 var(--body); color: var(--dim); }
+}
+@keyframes turnup { 0%, 15% { transform: rotate(-90deg); } 45%, 85% { transform: rotate(0deg); } 100% { transform: rotate(-90deg); } }
+@media (prefers-reduced-motion: reduce) { .callout.show, .tag.show { animation-duration: .01s; } .turn svg { animation: none; } }
 </style>
 </head>
 <body>
 <canvas id="gl"></canvas>
 <div class="grade"></div>
+<div class="turn" role="alert">
+  <svg viewBox="0 0 48 48" aria-hidden="true"><rect x="15" y="5" width="18" height="38" rx="3.5" fill="none" stroke="currentColor" stroke-width="2.5"/><path d="M21 38h6" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"/></svg>
+  <p>Turn your phone upright</p>
+  <small>Livewire Hoops plays in portrait</small>
+</div>
 
 <div id="hud" hidden>
   <div class="bug">

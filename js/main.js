@@ -253,6 +253,10 @@ function pause(on) {
   sound.duck(on);
 }
 document.addEventListener('visibilitychange', () => { if (document.hidden && game && !game.over) pause(true); });
+// phones play in portrait only: held sideways, the page covers the game (index.html) and it pauses
+const sideways = matchMedia('(pointer: coarse) and (orientation: landscape) and (max-height: 520px)');
+const onTurn = () => { if (sideways.matches && game && !game.over) pause(true); };
+if (sideways.addEventListener) sideways.addEventListener('change', onTurn); else sideways.addListener(onTurn);
 
 async function rebuildRenderer() {
   makeRenderer();

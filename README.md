@@ -1,6 +1,6 @@
 # Hoops 1v1
 
-Live at **https://livewire.hoops.gamify.com**. This repo is the hosted copy (GitHub Pages). The source lives in [JonnyShan/Multi-View-Screen](https://github.com/JonnyShan/Multi-View-Screen) under `hardwood/`; this copy is from commit `45df47e`.
+Live at **https://livewire.hoops.gamify.com**. This repo is the hosted copy (GitHub Pages). The source lives in [JonnyShan/Multi-View-Screen](https://github.com/JonnyShan/Multi-View-Screen) under `hardwood/`; this copy is from commit `0e18fa5`.
 
 A 1-on-1 half-court basketball game for phones, built with three.js. Open `index.html` from any static web server.
 
@@ -24,6 +24,8 @@ A 1-on-1 half-court basketball game for phones, built with three.js. Open `index
   Sneaker squeaks and the buzzer are still synthesised with WebAudio. If a sound file fails to load, a synthesised version plays instead.
 
 ## Controls
+
+On phones the game plays in portrait only. Turned sideways, the screen asks you to turn the phone upright, and a game in progress pauses. Tablets and computers play either way.
 
 | Action | Touch | Keyboard |
 | --- | --- | --- |
