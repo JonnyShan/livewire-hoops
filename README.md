@@ -1,6 +1,6 @@
 # Hoops 1v1
 
-Live at **https://livewire.hoops.gamify.com**. This repo is the hosted copy (GitHub Pages). The source lives in [JonnyShan/Multi-View-Screen](https://github.com/JonnyShan/Multi-View-Screen) under `hardwood/`; this copy is from commit `4b01626`.
+Live at **https://livewire.hoops.gamify.com**. This repo is the hosted copy (GitHub Pages). The source lives in [JonnyShan/Multi-View-Screen](https://github.com/JonnyShan/Multi-View-Screen) under `hardwood/`; this copy is from commit `c608b23`.
 
 A 1-on-1 half-court basketball game for phones, built with three.js. Open `index.html` from any static web server.
 
@@ -13,7 +13,7 @@ A 1-on-1 half-court basketball game for phones, built with three.js. Open `index
 - **Players**: two fictional players. Each body is a textured, rigged 3D model (about 94,000 triangles) made from a generated full-body photo. Models ship as meshopt-compressed glTF binaries (`models/*.glb`, about 1.1 MB each) plus WebP maps: colour, a surface-detail normal map and a roughness map, both derived from the colour texture. Where WebAssembly is blocked (strict content-security policies), the uncompressed glTF JSON (`models/*.json`) is loaded instead. The jersey hem and shorts carry per-vertex cloth weights, so they trail the body, drop and lift on jumps, and flutter at speed. On the Low quality setting the lighter 31,000-triangle bodies (`models/*-lo.*`) are used. If a model fails to load, a built-in body is used instead. The data for six more players is still in `js/data.js`, but there is no picker for now.
 - **Motion**: running, walking, backpedalling, defensive slides, stances and jumps come from motion-capture clips (`models/motion.json`). The clips are blended by speed and direction and retargeted onto each body. A procedural rig handles what the library doesn't cover: dribbling, shooting, layups, dunks, steals, and arm IK that keeps the hands on the ball.
 - **Replays**: when you hit a three or a dunk, the game cuts to a slow-motion replay from broadcast angles (tap to skip). It is recorded as a branded video clip with the crowd sound; tap **Share clip** in the HUD, or **Share** on the end screen, to share it or save it (`js/replay.js`). Sharing needs HTTPS and a browser with file sharing; otherwise the clip downloads.
-- **Loading and frame rate**: a loading screen shows while the models, motion and sounds download (`js/progress.js`), then fades to the title. It has the Livewire game ball turning slowly (a 10-second seamless loop, `img/ball.mp4` with a WebM fallback, about 230 KB; its first frame `img/ball.webp` shows straight away), a thin progress bar, and the Livewire wordmark at the bottom. Video plays off the main thread, so the ball keeps turning while the 3D setup is busy. On the Auto quality setting, the render resolution steps between 70% and 100% in 5% steps to hold 60 fps. Phones slow down as they warm up, so it steps down when a 2-second stretch falls below 57 fps. It steps back up after 6 seconds at 59 fps or more, but doesn't retry a resolution that just failed for a minute.
+- **Loading and frame rate**: a loading screen shows while the models, motion and sounds download (`js/progress.js`), then fades to the title. It has the Livewire game ball turning slowly (a 10-second seamless loop, `img/ball.mp4` with a WebM fallback, about 230 KB; its first frame `img/ball.webp` shows straight away), a thin progress bar, and the Livewire wordmark at the bottom. Video plays off the main thread, so the ball keeps turning while the 3D setup is busy. On the Auto quality setting, the render resolution steps between 70% and 100% in 5% steps to hold 60 fps. Phones slow down as they warm up, so it steps down when a 3-second stretch falls below 54 fps. It steps back up after 6 seconds at 57.5 fps or more, but doesn't retry a resolution that just failed for a minute.
 - **Gameplay**: timed jump shots with a release meter, layups and dunks, crossovers, spins and step-backs, steals, blocks, rebounds, a 12-second shot clock, clearing the ball, and games to 11. The front screen has one button: Start.
 - **Audio** (`sfx/`): the crowd is all crowd, with no single voices:
   - an arena crowd bed that gets louder while a three is in the air and falls away after a miss or when the CPU scores
@@ -46,17 +46,19 @@ Add `?debug` to the address (for example `https://livewire.hoops.gamify.com/?deb
 
 While you play, the panel shows only the essentials. Pause the game or reach the end screen to see everything. **Copy report** copies the full details, including the frame-time histogram and when the long frames happened.
 
-**Bench** starts a fresh CPU-vs-CPU game and measures 6 seconds each of:
+**Bench** starts a fresh CPU-vs-CPU game and measures 5 seconds each of:
 
 - the game as is
 - no shadows
+- hard-edged shadows
 - no floor reflection
+- the reflection at 60% size
 - the players left out of the reflection
 - no crowd
 - 70% resolution
 - the game as is again, to show whether the phone slowed down as it warmed up
 
-Bench runs for about 45 seconds and shows a countdown on its button. Copy is off until it finishes. Leaving Safari or pausing stops it. Each result shows the frame rate and how long the game's script took per frame. If switching something off raises the frame rate, that is what the phone is short of. If the script time is close to the frame time, the CPU is the limit rather than the GPU.
+Bench runs for about a minute and shows a countdown on its button. Copy is off until it finishes. Leaving Safari or pausing stops it. Each frame waits for the GPU to finish, so each result is the real time to draw a frame (script plus GPU) and isn't capped by the 60 Hz screen. Under 16.7 ms holds 60 fps. The step that saves the most time is what the phone is short of.
 
 ## Files
 

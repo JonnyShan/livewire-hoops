@@ -199,9 +199,11 @@ export function startDebug(hw) {
 
   // ---------- bench ----------
   // A fresh CPU-vs-CPU game (no replays), measured for 5 s with each costly
-  // part switched off in turn; the plain setup runs first and last, so a phone
-  // that heats up in between shows as the two not matching. Leaving Safari or
-  // pausing stops it, since the numbers would be wrong.
+  // part switched off or cut down in turn; the plain setup runs first and
+  // last, so a phone that heats up in between shows as the two not matching.
+  // Each frame waits for the GPU to finish (a 1-pixel read), so the time per
+  // frame is the real cost of drawing it, not capped by the 60 Hz screen.
+  // Leaving Safari or pausing stops it, since the numbers would be wrong.
   const SETTLE = 1500, MEASURE = 5000;
   const wait = (ms) => new Promise((r) => setTimeout(r, ms));
   async function runBench() {
@@ -222,10 +224,16 @@ export function startDebug(hw) {
     let fans = null;
     scene.traverse((o) => { if (!fans && o.isMesh && o.geometry.isInstancedBufferGeometry) fans = o; });
     const skins = g.players.map((p) => p.skin && p.skin.mesh).filter(Boolean);
+    const rt = refl && refl.getRenderTarget(), rw = rt ? rt.width : 0, rh = rt ? rt.height : 0;
+    const reflSize = (k) => { if (!rt) return; const w = Math.round(rw * k), h = Math.round(rh * k); rt.setSize(w, h); refl.material.uniforms.texel.value.set(1 / w, 1 / h); };
+    const shadowType = R.shadowMap.type;
     const steps = [
       ['as is'],
       ['no shadows', () => { R.shadowMap.enabled = false; recompile(); }, () => { R.shadowMap.enabled = true; recompile(); }],
+      // three.PCFShadowMap (1): one filtered tap instead of the soft kernel
+      ['hard-edged shadows', () => { R.shadowMap.type = 1; recompile(); }, () => { R.shadowMap.type = shadowType; recompile(); }],
       ['no floor reflection', () => { if (refl) refl.visible = false; }, () => { if (refl) refl.visible = true; }],
+      ['reflection at 60% size', () => reflSize(0.6), () => reflSize(1)],
       // layer 1 is drawn by the main camera only, so the players drop out of the reflection
       ['players not reflected', () => skins.forEach((m) => m.layers.set(1)), () => skins.forEach((m) => m.layers.set(0))],
       ['no crowd', () => { if (fans) fans.visible = false; }, () => { if (fans) fans.visible = true; }],
@@ -249,12 +257,12 @@ export function startDebug(hw) {
       if (on) on();
       if (await hold(SETTLE)) {           // shaders compile, the frame rate settles
         Object.assign(bench, { on: true, n: 0, t: 0, js: 0 });
-        if (await hold(MEASURE)) out.push(`${name} ${f0(bench.n / bench.t)} fps ${(bench.js / Math.max(1, bench.n)).toFixed(1)} ms`);
+        if (await hold(MEASURE)) out.push(`${name} ${(bench.js / Math.max(1, bench.n)).toFixed(1)}`);
         bench.on = false;
       }
       if (off) off();
     }
-    benchOut = `bench (fps, script ms) ${out.join(' · ') || '-'}${bench.stopped ? ` · stopped at step ${out.length + 1}: Safari was left or the game paused` : ''}`;
+    benchOut = `bench (ms to draw a frame; under 16.7 holds 60 fps) ${out.join(' · ') || '-'}${bench.stopped ? ` · stopped at step ${out.length + 1}: Safari was left or the game paused` : ''}`;
     if (hw.game === g) { g.autoplay = false; g.onHighlight = hl; g.to = to; }
     hw.setScale(scale0);
     hw.lockScale(false);
@@ -266,5 +274,12 @@ export function startDebug(hw) {
     render();
   }
 
-  return { frame, report: () => lines(true).join('\n') };
+  const px = new Uint8Array(4);
+  function sync() {
+    if (!bench || !bench.on || !renderer) return;
+    const gl = renderer.getContext();
+    gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, px);
+  }
+
+  return { frame, sync, report: () => lines(true).join('\n') };
 }
