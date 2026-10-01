@@ -5,6 +5,7 @@ import * as THREE from 'three';
 import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { loadMotion, MotionLayer, MOTION_URL } from './motion.js';
+import { modelProgress } from './progress.js';
 
 const gltfCache = new Map();
 export function loadModel(url) {
@@ -12,13 +13,63 @@ export function loadModel(url) {
   return gltfCache.get(url);
 }
 
-// Models ship as glTF JSON with the geometry buffer inlined as base64. Strict
-// hosts (CSP connect-src 'self') refuse to fetch data: URIs, so decode the
-// buffer here and hand GLTFLoader an in-memory GLB instead.
-async function fetchModel(url) {
+// Each model ships twice: a meshopt-compressed GLB (about a fifth of the size)
+// and a plain glTF JSON. The GLB needs WebAssembly to decode, which strict
+// hosts can block (CSP without 'wasm-unsafe-eval'), so the JSON is the fallback.
+const wasmOK = (() => {
+  try { new WebAssembly.Module(new Uint8Array([0, 97, 115, 109, 1, 0, 0, 0])); return true; } catch (e) { return false; }
+})();
+let meshoptP = null;
+function meshopt() {
+  if (!meshoptP) {
+    meshoptP = import('three/addons/libs/meshopt_decoder.module.js')
+      .then((m) => m.MeshoptDecoder.ready.then(() => m.MeshoptDecoder))
+      .catch(() => null);
+  }
+  return meshoptP;
+}
+
+// fetch a file as bytes, reporting progress to the loading bar under `key`
+async function fetchBytes(url, key, guess) {
   const res = await fetch(url);
-  if (!res.ok) throw new Error(`model ${url}: HTTP ${res.status}`);
-  const json = await res.json();
+  if (!res.ok) throw new Error(`${url}: HTTP ${res.status}`);
+  // the size header is the compressed size when the host gzips, so treat it as a guess
+  const len = +(res.headers.get('content-length') || 0);
+  const total = len ? len * (res.headers.get('content-encoding') ? 2.5 : 1) : guess;
+  const reader = res.body && res.body.getReader ? res.body.getReader() : null;
+  if (!reader) { const b = new Uint8Array(await res.arrayBuffer()); modelProgress(key, 1, 1); return b; }
+  const parts = []; let n = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    parts.push(value); n += value.length;
+    modelProgress(key, n, Math.max(total, n * 1.05));
+  }
+  const all = new Uint8Array(n); let o = 0;
+  for (const p of parts) { all.set(p, o); o += p.length; }
+  modelProgress(key, 1, 1);
+  return all;
+}
+
+async function fetchModel(url) {
+  const base = url.slice(0, url.lastIndexOf('/') + 1);
+  const packed = url.replace(/\.json$/, '.glb');
+  if (packed !== url && wasmOK) {
+    try {
+      // download and decoder start together
+      const [bytes, dec] = await Promise.all([fetchBytes(packed, url, 1.2e6), meshopt()]);
+      if (dec) return await new GLTFLoader().setMeshoptDecoder(dec).parseAsync(bytes.buffer, base);
+    } catch (e) { console.warn('compressed model failed, loading the plain one', e); }
+  }
+  return fetchModelJSON(url);
+}
+
+// The JSON has its geometry buffer inlined as base64. Strict hosts (CSP
+// connect-src 'self') refuse to fetch data: URIs, so decode the buffer here
+// and hand GLTFLoader an in-memory GLB instead.
+async function fetchModelJSON(url) {
+  const text = new TextDecoder().decode(await fetchBytes(url, url, 5e6));
+  const json = JSON.parse(text);
   const buf = json.buffers && json.buffers[0];
   const base = url.slice(0, url.lastIndexOf('/') + 1);
   const loader = new GLTFLoader();
@@ -936,7 +987,9 @@ export class Player {
       roughness: src.roughnessMap ? 1 : 0.7, metalness: 0, envMapIntensity: 0.45,
     });
     if (src.normalMap) mat.normalScale.copy(src.normalScale);
-    this.cloth = mesh.geometry.getAttribute('_cloth') ? clothSway(mat) : null;
+    const geo = mesh.geometry;
+    if (!geo.getAttribute('_cloth') && geo.getAttribute('color')) geo.setAttribute('_cloth', geo.getAttribute('color'));   // cloth weight in COLOR_0.r
+    this.cloth = geo.getAttribute('_cloth') ? clothSway(mat, mesh) : null;
     mesh.material = mat;
     mesh.castShadow = true;
     mesh.receiveShadow = true;
@@ -1065,14 +1118,17 @@ export class Player {
 
 // vertex shader patch for the loose kit: vertices carry a _cloth weight (0 on
 // the body, up to 1 at the shorts' hem) and follow uSway / uFlutter
-function clothSway(mat) {
-  const u = { uSway: { value: new THREE.Vector3() }, uFlutter: { value: new THREE.Vector4() } };
+function clothSway(mat, mesh) {
+  // compressed models store quantised positions; the mesh's own transform turns them back into metres
+  const deq = new THREE.Vector4(mesh.position.x, mesh.position.y, mesh.position.z, mesh.scale.x);
+  const u = { uSway: { value: new THREE.Vector3() }, uFlutter: { value: new THREE.Vector4() }, uDeq: { value: deq } };
   mat.onBeforeCompile = (sh) => {
     Object.assign(sh.uniforms, u);
     sh.vertexShader = sh.vertexShader
-      .replace('#include <common>', '#include <common>\nattribute float _cloth;\nuniform vec3 uSway;\nuniform vec4 uFlutter;')
+      .replace('#include <common>', '#include <common>\nattribute float _cloth;\nuniform vec3 uSway;\nuniform vec4 uFlutter;\nuniform vec4 uDeq;')
       .replace('#include <skinning_vertex>', `#include <skinning_vertex>
-        transformed += ( uSway + uFlutter.xyz * sin( uFlutter.w + position.y * 23.0 + position.x * 17.0 ) ) * _cloth;`);
+        vec3 pm = position * uDeq.w + uDeq.xyz;
+        transformed += ( uSway + uFlutter.xyz * sin( uFlutter.w + pm.y * 23.0 + pm.x * 17.0 ) ) * _cloth;`);
   };
   mat.customProgramCacheKey = () => 'cloth';
   return { u, sway: new THREE.Vector3(), vel: new THREE.Vector3(), t: 0, lastY: 0, lastVy: 0 };

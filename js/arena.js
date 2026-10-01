@@ -324,7 +324,7 @@ export async function buildArena(scene, renderer, { home, away, quality }) {
   group.add(ground);
 
   // hardwood
-  const woodTex = tex('img/floor.jpg');
+  const woodTex = tex('img/floor.webp');
   woodTex.wrapS = woodTex.wrapT = THREE.MirroredRepeatWrapping;
   const woodW = 18, woodL = 34;
   woodTex.repeat.set(woodW / 1.7, woodL / 1.7);

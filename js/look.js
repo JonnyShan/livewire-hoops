@@ -4,7 +4,8 @@
 import * as THREE from 'three';
 import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
 
-export const ENV_URL = 'img/arena-360.jpg';
+// phones get the half-size photo: it's blurred for lighting either way
+export const envUrl = (quality) => (quality === 'high' ? 'img/arena-360.webp' : 'img/arena-360-2k.webp');
 
 // ACES filmic, then a TV-sports grade: firmer contrast, a little more colour,
 // cool shadows and warm highlights, and blacks that stay black.
@@ -92,23 +93,25 @@ function toHDR(img, w) {
   return t;
 }
 
-let imgP = null;
+const imgs = new Map();
 function loadImg(url) {
-  if (!imgP) {
-    imgP = new Promise((res, rej) => {
+  if (!imgs.has(url)) {
+    const p = new Promise((res, rej) => {
       const im = new Image();
-      im.onload = () => res(im);
-      im.onerror = () => rej(new Error('failed to load ' + url));
+      THREE.DefaultLoadingManager.itemStart(url);
+      im.onload = () => { THREE.DefaultLoadingManager.itemEnd(url); res(im); };
+      im.onerror = () => { THREE.DefaultLoadingManager.itemError(url); THREE.DefaultLoadingManager.itemEnd(url); rej(new Error('failed to load ' + url)); };
       im.src = url;
     });
-    imgP.catch(() => { imgP = null; });
+    p.catch(() => imgs.delete(url));
+    imgs.set(url, p);
   }
-  return imgP;
+  return imgs.get(url);
 }
 
 // { env: prefiltered environment for lighting and reflections, background: the photo itself }
 export async function loadArenaLight(renderer, quality) {
-  const img = await loadImg(ENV_URL);
+  const img = await loadImg(envUrl(quality));
   const hdr = toHDR(img, quality === 'low' ? 512 : quality === 'med' ? 1024 : 2048);
   const pmrem = new THREE.PMREMGenerator(renderer);
   const env = pmrem.fromEquirectangular(hdr).texture;

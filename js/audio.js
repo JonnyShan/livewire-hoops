@@ -25,7 +25,12 @@ export class Sound {
     this.buf = {};
     this.swell = 0;          // the crowd noise building while a three is in the air
     this.dip = 0;            // ...and falling away after a miss or an opponent's score
-    // start downloading straight away; decoding waits for the audio unlock tap
+    this.raw = null;
+  }
+
+  // download the sound files (decoding waits for the audio unlock tap)
+  preload() {
+    if (this.raw) return;
     this.raw = {};
     for (const [k, files] of Object.entries(SFX)) {
       this.raw[k] = files.map((f) => fetch(f).then((r) => (r.ok ? r.arrayBuffer() : null)).catch(() => null));
@@ -72,6 +77,7 @@ export class Sound {
     src.connect(bp).connect(lp).connect(this.synthBed).connect(this.crowd);
     src.start();
     this.bed = null;
+    this.preload();
     this.decodeAll();
   }
 

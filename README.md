@@ -1,17 +1,19 @@
 # Hoops 1v1
 
-Live at **https://livewire.hoops.gamify.com**. This repo is the hosted copy (GitHub Pages). The source lives in [JonnyShan/Multi-View-Screen](https://github.com/JonnyShan/Multi-View-Screen) under `hardwood/`; this copy is from commit `bbd16b3`.
+Live at **https://livewire.hoops.gamify.com**. This repo is the hosted copy (GitHub Pages). The source lives in [JonnyShan/Multi-View-Screen](https://github.com/JonnyShan/Multi-View-Screen) under `hardwood/`; this copy is from commit `74281b4`.
 
 A 1-on-1 half-court basketball game for phones, built with three.js. Open `index.html` from any static web server.
 
 ## What's in it
 
 - **Arena**: a 3D half court with glossy floor reflections, a verlet-cloth net, a rim and glass that the ball physically bounces off, LED boards and a shot clock. The hardwood is a photo texture.
-- **Lighting**: everything is lit and reflected by a 360° photo of a packed arena (`img/arena-360.jpg`, see `js/look.js`); its floodlights are boosted back to HDR brightness so they read as real overhead light. The same photo shows through above the lower bowl. Each player casts a shadow and has soft contact shadows under both shoes. A broadcast colour grade (firmer contrast, cool shadows, warm highlights) is built into the tone mapper, so it costs nothing extra on phones.
+- **Lighting**: everything is lit and reflected by a 360° photo of a packed arena (`img/arena-360.webp`, see `js/look.js`; phones get a 2k copy); its floodlights are boosted back to HDR brightness so they read as real overhead light. The same photo shows through above the lower bowl. Each player casts a shadow and has soft contact shadows under both shoes. A broadcast colour grade (firmer contrast, cool shadows, warm highlights) is built into the tone mapper, so it costs nothing extra on phones.
 - **Crowd**: a tiered bowl of about 2,200 fans around the half court (`js/crowd.js`). Each fan is a photographed card with a seated and a cheering frame (`img/fans.webp`, 40 different fans, mirrored for variety), all drawn in one instanced call. The crowd rises when you shoot a three, jumps to its feet and bounces when you score, sits back down after a miss, and goes quiet when the CPU scores. Camera flashes go off with the excitement.
 - **Branding**: Livewire (livewire.group). Both players wear Livewire kits: you (Morrow, #7) in yellow, the CPU (Varga, #3) in black. The arena boards, court and UI use Livewire's yellow `#CBFE00` and black, its wordmark and its mark (`BRAND` in `js/data.js`, `img/logo-livewire*.png`, `img/livewire-mark.png`). The kits, portraits and cover were regenerated with Higgsfield, using Livewire's wordmark as the reference for the chest lettering.
-- **Players**: two fictional players. Each body is a textured, rigged 3D model (about 94,000 triangles) made from a generated full-body photo. Models ship as glTF JSON (quantised geometry) plus JPEG maps (`models/`): colour, a surface-detail normal map and a roughness map, both derived from the colour texture. The jersey hem and shorts carry per-vertex cloth weights, so they trail the body, drop and lift on jumps, and flutter at speed. On the Low quality setting the lighter 31,000-triangle bodies (`models/*-lo.*`) are used. If a model fails to load, a built-in body is used instead. The data for six more players is still in `js/data.js`, but there is no picker for now.
+- **Players**: two fictional players. Each body is a textured, rigged 3D model (about 94,000 triangles) made from a generated full-body photo. Models ship as meshopt-compressed glTF binaries (`models/*.glb`, about 1.1 MB each) plus WebP maps: colour, a surface-detail normal map and a roughness map, both derived from the colour texture. Where WebAssembly is blocked (strict content-security policies), the uncompressed glTF JSON (`models/*.json`) is loaded instead. The jersey hem and shorts carry per-vertex cloth weights, so they trail the body, drop and lift on jumps, and flutter at speed. On the Low quality setting the lighter 31,000-triangle bodies (`models/*-lo.*`) are used. If a model fails to load, a built-in body is used instead. The data for six more players is still in `js/data.js`, but there is no picker for now.
 - **Motion**: running, walking, backpedalling, defensive slides, stances and jumps come from motion-capture clips (`models/motion.json`). The clips are blended by speed and direction and retargeted onto each body. A procedural rig handles what the library doesn't cover: dribbling, shooting, layups, dunks, steals, and arm IK that keeps the hands on the ball.
+- **Replays**: when you hit a three or a dunk, the game cuts to a slow-motion replay from broadcast angles (tap to skip). It is recorded as a branded video clip with the crowd sound; tap **Share clip** in the HUD, or **Share** on the end screen, to share it or save it (`js/replay.js`). Sharing needs HTTPS and a browser with file sharing; otherwise the clip downloads.
+- **Loading and frame rate**: a loading screen (a slowly spinning basketball, a thin progress bar, and the Livewire wordmark at the bottom) shows while the models, motion and sounds download (`js/progress.js`), then fades to the title. The spin is a CSS animation, so it keeps turning while the 3D setup is busy. On the Auto quality setting the render resolution steps between 70% and 100% to hold the frame rate.
 - **Gameplay**: timed jump shots with a release meter, layups and dunks, crossovers, spins and step-backs, steals, blocks, rebounds, a 12-second shot clock, clearing the ball, and games to 11. The front screen has one button: Start.
 - **Audio** (`sfx/`): the crowd is all crowd, with no single voices:
   - an arena crowd bed that gets louder while a three is in the air and falls away after a miss or when the CPU scores
@@ -41,6 +43,8 @@ A 1-on-1 half-court basketball game for phones, built with three.js. Open `index
 - `js/arena.js`: court, markings, reflections, LED boards, hoop
 - `js/crowd.js`: the seating bowl and the animated crowd
 - `js/look.js`: arena lighting from the 360° photo, and the colour grade
+- `js/replay.js`: highlight recording, replay cameras, and the shareable video clip
+- `js/progress.js`: download progress for the Start button
 - `js/audio.js`: sound playback (recorded crowd and ball sounds, synthesised fallbacks)
 - `js/input.js`, `js/data.js`
 

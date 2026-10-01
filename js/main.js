@@ -6,12 +6,15 @@ import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
 import { TEAMS, DIFFICULTY } from './data.js';
 import { buildArena, RIM } from './arena.js';
-import { Player } from './player.js';
+import { Player, loadModel } from './player.js';
+import { loadMotion, MOTION_URL } from './motion.js';
 import { Ball, Net } from './ball.js';
 import { Game } from './game.js';
 import { Sound } from './audio.js';
 import { Input } from './input.js';
 import { installGrade, makeGradePass, loadArenaLight } from './look.js';
+import { onProgress } from './progress.js';
+import { Replay, shareClip } from './replay.js';
 
 installGrade();
 
@@ -26,6 +29,10 @@ const save = () => { try { localStorage.setItem('hardwood.settings', JSON.string
 const HOME = TEAMS[0], AWAY = TEAMS[1];
 const DIFF = DIFFICULTY.pro, GAME_TO = 11;
 const qualityTier = () => settings.quality === 'auto' ? (isTouch ? 'med' : 'high') : settings.quality;
+const modelUrl = (team) => (qualityTier() === 'low' && team.modelLo ? team.modelLo : team.model);
+// the players are most of the download: start them the moment the page script runs
+for (const t of [HOME, AWAY]) if (t.model && settings.models !== false) loadModel(modelUrl(t)).catch(() => {});
+loadMotion(MOTION_URL).catch(() => {});
 
 // ---------- renderer ----------
 const canvas = $('gl');
@@ -36,11 +43,14 @@ camera.position.set(0, 4.5, 17);
 camera.layers.enable(1);
 const resolution = new THREE.Vector2(1, 1);
 
+const basePixelRatio = (q = qualityTier()) => Math.min(window.devicePixelRatio || 1, q === 'high' ? 2 : q === 'med' ? 1.6 : 1);
+
 function makeRenderer() {
   const q = qualityTier();
   if (renderer) renderer.dispose();
   renderer = new THREE.WebGLRenderer({ canvas, antialias: q !== 'low', powerPreference: 'high-performance', stencil: false });
-  renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, q === 'high' ? 2 : q === 'med' ? 1.6 : 1));
+  gov.scale = 1;
+  renderer.setPixelRatio(basePixelRatio(q));
   renderer.toneMapping = THREE.CustomToneMapping;      // ACES + broadcast grade (look.js)
   renderer.toneMappingExposure = 0.82;
   renderer.outputColorSpace = THREE.SRGBColorSpace;
@@ -62,6 +72,7 @@ function makeRenderer() {
     composer.addPass(bloom);
     composer.addPass(makeGradePass(renderer));
   }
+  replay.renderer = renderer;
   resize();
 }
 
@@ -92,8 +103,12 @@ window.addEventListener('resize', () => renderer && resize());
 let arena = null, players = [], ball = null, net = null, game = null;
 const sound = new Sound();
 let input = null;
+const replay = new Replay({ camera, sound, canvas });
 
 async function buildMatch(home, away) {
+  // the players are most of the download: start them first, in parallel with the arena
+  for (const t of [home, away]) if (t.model && settings.models !== false) loadModel(modelUrl(t)).catch(() => {});
+  loadMotion(MOTION_URL).catch(() => {});
   // clear previous
   if (arena) scene.remove(arena.group);
   for (const p of players) scene.remove(p.group);
@@ -107,9 +122,8 @@ async function buildMatch(home, away) {
   for (const p of players) scene.add(p.group);
   // photoreal bodies where a model exists (falls back to the built-in body)
   // Low quality keeps the lighter (31k-triangle) bodies for older phones
-  const lo = qualityTier() === 'low';
   await Promise.all(players.map((p) => (p.team.model && !p.away && settings.models !== false
-    ? p.attachSkin(lo && p.team.modelLo ? p.team.modelLo : p.team.model).catch((e) => console.warn('model failed, using built-in body', e)) : null)));
+    ? p.attachSkin(modelUrl(p.team)).catch((e) => console.warn('model failed, using built-in body', e)) : null)));
   ball = new Ball(scene);
   net = new Net(scene, resolution);
   resize();
@@ -189,7 +203,36 @@ for (const m of ['modHow', 'modSettings']) {
     }
   });
 }
-$('goPlay').onclick = () => { sound.unlock(); sound.setEnabled(settings.sound); startMatch(); };
+// Start: the loading screen covers the title until the arena and players are
+// in. The button still shows progress, and a tap before everything is in starts
+// the game as soon as it is.
+let matchReady = null, isReady = false, startQueued = false;
+function setStartLabel(f = 0) {
+  const b = $('goPlay');
+  if (isReady) { b.textContent = 'Start'; b.classList.remove('loading'); b.style.removeProperty('--p'); return; }
+  b.classList.add('loading');
+  b.style.setProperty('--p', `${Math.round(f * 100)}%`);
+  b.textContent = startQueued ? 'Starting…' : `Loading ${Math.round(f * 100)}%`;
+}
+onProgress((f) => { if (!isReady) setStartLabel(f); $('loadBar').style.transform = `scaleX(${f})`; });
+
+// the loading screen (spinning ball); it fades out rather than snapping off
+function showLoader() { const l = $('loading'); l.hidden = false; l.classList.remove('out'); }
+function hideLoader() {
+  const l = $('loading');
+  if (l.hidden || l.classList.contains('out')) return;
+  l.classList.add('out');
+  setTimeout(() => { if (l.classList.contains('out')) l.hidden = true; }, 480);
+}
+$('goPlay').onclick = async () => {
+  sound.unlock(); sound.setEnabled(settings.sound);
+  if (!isReady) {
+    if (startQueued) return;                 // already waiting
+    startQueued = true; setStartLabel(); await matchReady;
+  }
+  startQueued = false;
+  startMatch();
+};
 $('pauseBtn').onclick = () => pause(true);
 $('resume').onclick = () => pause(false);
 $('pHow').onclick = () => { $('modHow').hidden = false; };
@@ -214,11 +257,12 @@ async function rebuildRenderer() {
     await buildMatch(HOME, AWAY);
     game.rebind({ arena, players, ball, net });
     game.restore(snap);
+    replay.bind({ players, ball, net, game, renderer });
   }
 }
 
 async function startMatch() {
-  $('loading').hidden = false;
+  showLoader();
   show(null);
   const home = HOME, away = AWAY;
   await buildMatch(home, away);
@@ -229,7 +273,7 @@ async function startMatch() {
   $('gameTo').textContent = `TO ${GAME_TO}`;
   $('hud').hidden = false;
   $('pad').hidden = false;
-  $('loading').hidden = true;
+  hideLoader();
   if (game) game.dispose();
   if (!input) input = new Input();
   input.parkStick();
@@ -238,11 +282,18 @@ async function startMatch() {
     diff: DIFF, to: GAME_TO, vib: () => settings.vib,
     onEnd: showEnd,
   });
+  // highlights: your threes and dunks get a slow-motion replay and a shareable clip
+  replay.bind({ players, ball, net, game, renderer });
+  game.onHighlight = (h) => replay.highlight({ ...h, names: [HOME.abbr, AWAY.abbr] });
+  replay.onClip = showClipChip;
+  $('clipChip').hidden = true;
   resize();
   updateCamera(0, game.focus(), true);
 }
 
 function endToMenu() {
+  replay.skip(); replay.pending = null; endQueued = null;
+  $('clipChip').hidden = true;
   if (game) game.dispose();
   game = null;
   $('hud').hidden = true;
@@ -267,24 +318,82 @@ function showEnd(res) {
     row('Blocks', s[0].blk, s[1].blk) +
     row('Steals', s[0].stl, s[1].stl) +
     row('Perfect releases', s[0].green, s[1].green);
-  setTimeout(() => { $('modEnd').hidden = false; $('pad').hidden = true; }, 1800);
+  $('endShare').hidden = !replay.clip;
+  const open = () => { $('modEnd').hidden = false; $('pad').hidden = true; $('clipChip').hidden = true; };
+  // a game-winning three or dunk gets its replay before the final card
+  if (replay.pending || replay.active) endQueued = open; else setTimeout(open, 1800);
 }
+
+// ---------- replays ----------
+let endQueued = null, chipT = 0;
+function startReplay() {
+  $('hud').hidden = true; $('pad').hidden = true; $('clipChip').hidden = true;
+  replay.onDone = () => {
+    if (!game) return;
+    $('hud').hidden = false;
+    if (!game.over) $('pad').hidden = false;
+    if (input) input.parkStick();
+    if (endQueued) { const f = endQueued; endQueued = null; setTimeout(f, 500); }
+  };
+  replay.start();
+}
+function showClipChip() {
+  if (!game) return;
+  $('endShare').hidden = false;
+  if (game.over) return;
+  $('clipChip').hidden = false;
+  clearTimeout(chipT);
+  chipT = setTimeout(() => { $('clipChip').hidden = true; }, 12000);
+}
+$('replayUI').addEventListener('pointerdown', (e) => { e.preventDefault(); replay.skip(); });
+$('clipChip').onclick = async () => { $('clipChip').hidden = true; await shareClip(replay.clip); };
+$('endShare').onclick = () => shareClip(replay.clip);
 
 // ---------- loop ----------
 let last = performance.now();
 function frame(now) {
   requestAnimationFrame(frame);
-  const dt = Math.min(0.05, (now - last) / 1000);
+  const real = (now - last) / 1000;
+  const dt = Math.min(0.05, real);
   last = now;
   if (window.__hw && window.__hw.manual) return;   // stepped externally (capture/testing)
   tick(dt);
+  govern(real);
+}
+
+// Frame-rate governor (Auto quality only): if a phone can't hold about 50 fps
+// in play, render fewer pixels; hand them back when there's headroom.
+const gov = { t: 0, n: 0, scale: 1 };
+function govern(real) {
+  if (settings.quality !== 'auto' || !game || paused || real > 0.5) { gov.t = gov.n = 0; return; }
+  gov.t += real; gov.n++;
+  if (gov.t < 2.5) return;
+  const fps = gov.n / gov.t;
+  gov.t = gov.n = 0;
+  let s = gov.scale;
+  if (fps < 48) s = Math.max(0.7, s - 0.1);
+  else if (fps > 57) s = Math.min(1, s + 0.05);
+  if (s === gov.scale) return;
+  gov.scale = s;
+  renderer.setPixelRatio(basePixelRatio() * s);
+  resize();
 }
 
 function tick(dt) {
   if (arena) arena.update(dt, camera);
+  if (replay.active) {
+    // the play again, in slow motion (the crowd stays live)
+    if (paused || !game) replay.skip(); else replay.update(dt);
+    if (composer) composer.render(); else renderer.render(scene, camera);
+    replay.capture();
+    if (!replay.active && game) updateCamera(0, game.focus(), true);
+    return;
+  }
   if (game && !paused) {
     const sdt = dt * game.timeScale;
     game.update(sdt, dt);
+    replay.record();
+    if (replay.tickPending(dt)) startReplay();
     updateCamera(dt, game.focus());
     const ov = window.__hw && window.__hw.camOverride;
     if (ov) { camera.position.set(...ov.pos); camera.lookAt(...ov.look); }
@@ -299,16 +408,27 @@ function tick(dt) {
 
 // ---------- boot ----------
 async function boot() {
+  const mode = location.hash.replace('#', '');
+  setStartLabel(0);
+  // the title waits under the loading screen; let the spinning ball paint before the 3D setup takes the main thread
+  if (mode !== 'play') show('scrTitle');
+  await new Promise((r) => requestAnimationFrame(() => setTimeout(r, 0)));
   makeRenderer();
   sound.setEnabled(settings.sound);
-  const mode = location.hash.replace('#', '');
-  await buildMatch(HOME, AWAY);
-  $('loading').hidden = true;
-  if (mode === 'play') { await startMatch(); }
-  else show('scrTitle');
   requestAnimationFrame(frame);
+  matchReady = buildMatch(HOME, AWAY);
+  await matchReady;
+  sound.preload();          // the sounds wait until the players are in (they'd only compete for bandwidth)
+  isReady = true;
+  setStartLabel();
+  $('loadBar').style.transform = 'scaleX(1)';
+  // on a fast (cached) load, keep the ball up long enough to see it turn rather than flash
+  const shown = performance.now();
+  if (shown < 900) await new Promise((r) => setTimeout(r, 900 - shown));
+  if (mode === 'play') await startMatch(); else hideLoader();
+  $('goPlay').dataset.ready = '1';
 }
 boot();
 
 // debug hooks for automated checks
-window.__hw = { get game() { return game; }, get renderer() { return renderer; }, get arena() { return arena; }, camera, scene, settings, step: (dt) => tick(dt), manual: false, start: () => startMatch() };
+window.__hw = { get game() { return game; }, get renderer() { return renderer; }, get arena() { return arena; }, replay, camera, scene, settings, step: (dt) => tick(dt), manual: false, start: () => startMatch() };

@@ -7,6 +7,7 @@ import { LineMaterial } from 'three/addons/lines/LineMaterial.js';
 import { COURT, RIM } from './arena.js';
 
 export const BALL_R = 0.119;
+export const AIR_DRAG = 0.05;          // per second, on the ball's velocity in flight
 const G = 9.81;
 const _n = new THREE.Vector3();
 const _t = new THREE.Vector3();
@@ -101,7 +102,7 @@ export class Ball {
     const p = this.pos, v = this.vel;
     this.prev.copy(p);
     v.y -= G * h;
-    v.multiplyScalar(1 - 0.05 * h);
+    v.multiplyScalar(1 - AIR_DRAG * h);
     p.addScaledVector(v, h);
 
     // rim (torus): nearest point on the ring
