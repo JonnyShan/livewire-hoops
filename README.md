@@ -1,6 +1,6 @@
 # Hoops 1v1
 
-Live at **https://livewire.hoops.gamify.com**. This repo is the hosted copy (GitHub Pages). The source lives in [JonnyShan/Multi-View-Screen](https://github.com/JonnyShan/Multi-View-Screen) under `hardwood/`; this copy is from commit `1bdc3c8`.
+Live at **https://livewire.hoops.gamify.com**. This repo is the hosted copy (GitHub Pages). The source lives in [JonnyShan/Multi-View-Screen](https://github.com/JonnyShan/Multi-View-Screen) under `hardwood/`; this copy is from commit `b59d5d3`.
 
 A 1-on-1 half-court basketball game for phones, built with three.js. Open `index.html` from any static web server.
 
@@ -32,6 +32,20 @@ A 1-on-1 half-court basketball game for phones, built with three.js. Open `index
 | Move / Steal | Grey button | K |
 | Pause | Top-left button | — |
 
+## Testing on a phone
+
+Add `?debug` to the address (for example `https://livewire.hoops.gamify.com/?debug`) to show a performance panel. It shows:
+
+- the frame rate and the worst recent frame
+- the quality and render scale that Auto chose
+- the session's average frame rate, 1% low, hitches and frame rate every 10 seconds, which shows a phone slowing as it heats up
+- replay frame rate and whether a clip was recorded
+- load and start times, and how much was downloaded
+- whether the loading ball video played, and the audio state
+- the device and GPU
+
+While you play, the panel shows only the essentials. Pause the game or reach the end screen to see everything. **Copy report** copies the full details, including the frame-time histogram.
+
 ## Files
 
 - `js/main.js`: renderer, quality tiers, menus, camera, loop
@@ -45,6 +59,7 @@ A 1-on-1 half-court basketball game for phones, built with three.js. Open `index
 - `js/look.js`: arena lighting from the 360° photo, and the colour grade
 - `js/replay.js`: highlight recording, replay cameras, and the shareable video clip
 - `js/progress.js`: download progress for the Start button
+- `js/debug.js`: the `?debug` performance panel
 - `js/audio.js`: sound playback (recorded crowd and ball sounds, synthesised fallbacks)
 - `js/input.js`, `js/data.js`
 

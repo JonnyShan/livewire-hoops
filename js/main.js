@@ -267,6 +267,7 @@ async function rebuildRenderer() {
 }
 
 async function startMatch() {
+  const t0 = performance.now();
   showLoader();
   show(null);
   const home = HOME, away = AWAY;
@@ -294,6 +295,7 @@ async function startMatch() {
   $('clipChip').hidden = true;
   resize();
   updateCamera(0, game.focus(), true);
+  timing.match = performance.now() - t0;
 }
 
 function endToMenu() {
@@ -364,6 +366,7 @@ function frame(now) {
   if (window.__hw && window.__hw.manual) return;   // stepped externally (capture/testing)
   tick(dt);
   govern(real);
+  if (dbg) dbg.frame(real);
 }
 
 // Frame-rate governor (Auto quality only): if a phone can't hold about 50 fps
@@ -412,6 +415,7 @@ function tick(dt) {
 }
 
 // ---------- boot ----------
+const timing = { ready: 0, match: 0 };   // ms: page open to playable, and the last Start tap to play
 async function boot() {
   const mode = location.hash.replace('#', '');
   setStartLabel(0);
@@ -423,6 +427,7 @@ async function boot() {
   requestAnimationFrame(frame);
   matchReady = buildMatch(HOME, AWAY);
   await matchReady;
+  timing.ready = performance.now();
   sound.preload();          // the sounds wait until the players are in (they'd only compete for bandwidth)
   isReady = true;
   setStartLabel();
@@ -437,3 +442,15 @@ boot();
 
 // debug hooks for automated checks
 window.__hw = { get game() { return game; }, get renderer() { return renderer; }, get arena() { return arena; }, replay, camera, scene, settings, step: (dt) => tick(dt), manual: false, start: () => startMatch() };
+
+// ?debug: the performance panel for testing on real phones (debug.js)
+let dbg = null;
+if (/[?&#]debug\b/.test(location.search + location.hash)) {
+  import('./debug.js').then((m) => {
+    dbg = m.startDebug({
+      get renderer() { return renderer; }, get game() { return game; }, get paused() { return paused; },
+      get replayActive() { return replay.active; }, get scale() { return gov.scale; }, get tier() { return qualityTier(); },
+      settings, canvas, timing, ldBall, sound, replay,
+    });
+  }).catch((e) => console.warn('debug panel failed', e));
+}
