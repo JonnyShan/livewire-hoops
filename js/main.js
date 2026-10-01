@@ -217,12 +217,17 @@ function setStartLabel(f = 0) {
 onProgress((f) => { if (!isReady) setStartLabel(f); $('loadBar').style.transform = `scaleX(${f})`; });
 
 // the loading screen (spinning ball); it fades out rather than snapping off
-function showLoader() { const l = $('loading'); l.hidden = false; l.classList.remove('out'); }
+const ldBall = $('ldBall');
+if (matchMedia('(prefers-reduced-motion: reduce)').matches) ldBall.pause();
+function showLoader() {
+  const l = $('loading'); l.hidden = false; l.classList.remove('out');
+  if (!matchMedia('(prefers-reduced-motion: reduce)').matches) ldBall.play().catch(() => {});
+}
 function hideLoader() {
   const l = $('loading');
   if (l.hidden || l.classList.contains('out')) return;
   l.classList.add('out');
-  setTimeout(() => { if (l.classList.contains('out')) l.hidden = true; }, 480);
+  setTimeout(() => { if (l.classList.contains('out')) { l.hidden = true; ldBall.pause(); } }, 480);
 }
 $('goPlay').onclick = async () => {
   sound.unlock(); sound.setEnabled(settings.sound);
