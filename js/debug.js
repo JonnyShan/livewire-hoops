@@ -81,6 +81,7 @@ export function startDebug(hw) {
   background: rgba(0,0,0,.68); color: #e9e9e9; font: 10.5px/1.38 ui-monospace, Menlo, monospace; padding: 6px 8px; pointer-events: none; }
 #dbg pre { margin: 0; font: inherit; white-space: pre-wrap; }
 #dbg .bar { display: flex; gap: 6px; margin-bottom: 4px; }
+#dbg button:disabled { opacity: .55; }
 #dbg button { pointer-events: auto; font: 700 10.5px/1 ui-monospace, Menlo, monospace; color: #111; background: #e9e9e9; border: 0; padding: 6px 9px; }
 #dbg b.g { color: #5fe08a; } #dbg b.a { color: #ffc34d; } #dbg b.r { color: #ff6b5e; }
 #dbg.min pre { display: none; }`;
@@ -136,6 +137,7 @@ export function startDebug(hw) {
     L.push(`quality ${q}${q === 'auto' ? ' → ' + tier : ''} · scale ${hw.scale.toFixed(2)} · ${c.width}×${c.height} px`);
     if (brief) {
       if (play.n) L.push(`play ${clock(play.t)} · avg ${f0(play.n / play.t)} · 1% low ${f0(low1(play))} · hitches ${play.hitches}`);
+      if (benchOut) L.push(benchOut);
       return L;
     }
     L.push(`draws ${draws} · ${f0(tris / 1000)}k tris · ${renderer ? renderer.info.memory.textures : 0} textures`);
@@ -171,15 +173,17 @@ export function startDebug(hw) {
     const fps = now.fps;
     head.className = fps >= 55 ? 'g' : fps >= 40 ? 'a' : 'r';
     head.textContent = `${f0(fps)} fps · worst ${f0(now.worstMs)} ms${bench ? ` · ${bench.label}` : ''}`;
+    if (bench && bench.end) benchBtn.textContent = `${Math.max(0, Math.ceil((bench.end - performance.now()) / 1000))} s left`;
     const playing = hw.game && !hw.paused && !hw.game.over;
     if (!el.classList.contains('min')) pre.textContent = lines(false, playing).join('\n');
   }
 
+  const copyBtn = el.querySelector('[data-a="copy"]'), benchBtn = el.querySelector('[data-a="bench"]');
   el.addEventListener('click', async (e) => {
     const b = e.target.closest('button');
-    if (!b) return;
+    if (!b || b.disabled) return;
     if (b.dataset.a === 'min') { el.classList.toggle('min'); b.textContent = el.classList.contains('min') ? 'Show' : 'Hide'; render(); return; }
-    if (b.dataset.a === 'bench') { runBench(b); return; }
+    if (b.dataset.a === 'bench') { runBench(); return; }
     const text = `Livewire Hoops debug\n${head.textContent}\n${lines(true).join('\n')}`;
     let ok = false;
     try { await navigator.clipboard.writeText(text); ok = true; } catch (err) {
@@ -194,23 +198,25 @@ export function startDebug(hw) {
   });
 
   // ---------- bench ----------
-  // A fresh CPU-vs-CPU game (no replays), measured for 6 s with each costly
+  // A fresh CPU-vs-CPU game (no replays), measured for 5 s with each costly
   // part switched off in turn; the plain setup runs first and last, so a phone
-  // that heats up in between shows as the two not matching.
+  // that heats up in between shows as the two not matching. Leaving Safari or
+  // pausing stops it, since the numbers would be wrong.
+  const SETTLE = 1500, MEASURE = 5000;
   const wait = (ms) => new Promise((r) => setTimeout(r, ms));
-  async function runBench(btn) {
+  async function runBench() {
     if (bench) return;
-    btn.disabled = true;
-    bench = { label: 'Bench: starting', on: false, n: 0, t: 0, js: 0 };
+    bench = { label: 'Bench: starting', on: false, n: 0, t: 0, js: 0, end: 0, stopped: false };
+    benchBtn.disabled = copyBtn.disabled = true;
+    copyBtn.textContent = 'Wait…';
     render();
     await hw.start();
     const g = hw.game, R = hw.renderer, scene = hw.scene, refl = hw.arena.reflector;
-    const hl = g.onHighlight, to = g.to;
+    const hl = g.onHighlight, to = g.to, scale0 = hw.scale;
     g.autoplay = true;
     g.onHighlight = null;
     g.to = 999;                         // no final buzzer mid-bench
     hw.lockScale(true);
-    const scale0 = hw.scale;
     hw.setScale(1);
     const recompile = () => scene.traverse((o) => { if (o.material) for (const m of [].concat(o.material)) m.needsUpdate = true; });
     let fans = null;
@@ -226,25 +232,37 @@ export function startDebug(hw) {
       ['resolution 70%', () => hw.setScale(0.7), () => hw.setScale(1)],
       ['as is again'],
     ];
+    bench.end = performance.now() + steps.length * (SETTLE + MEASURE);
+    // wait, but give up if the page is hidden, the game is paused or replaced
+    const hold = async (ms) => {
+      const until = performance.now() + ms;
+      while (performance.now() < until) {
+        if (document.hidden || hw.paused || hw.game !== g) { bench.stopped = true; return false; }
+        await wait(200);
+      }
+      return true;
+    };
     const out = [];
-    for (let i = 0; i < steps.length; i++) {
+    for (let i = 0; i < steps.length && !bench.stopped; i++) {
       const [name, on, off] = steps[i];
       bench.label = `Bench ${i + 1}/${steps.length}: ${name}`;
       if (on) on();
-      await wait(1500);                 // shaders compile, the frame rate settles
-      Object.assign(bench, { on: true, n: 0, t: 0, js: 0 });
-      await wait(6000);
-      bench.on = false;
-      out.push(`${name} ${f0(bench.n / bench.t)} fps ${(bench.js / Math.max(1, bench.n)).toFixed(1)} ms`);
+      if (await hold(SETTLE)) {           // shaders compile, the frame rate settles
+        Object.assign(bench, { on: true, n: 0, t: 0, js: 0 });
+        if (await hold(MEASURE)) out.push(`${name} ${f0(bench.n / bench.t)} fps ${(bench.js / Math.max(1, bench.n)).toFixed(1)} ms`);
+        bench.on = false;
+      }
       if (off) off();
     }
-    benchOut = `bench (fps, script ms) ${out.join(' · ')}`;
+    benchOut = `bench (fps, script ms) ${out.join(' · ') || '-'}${bench.stopped ? ` · stopped at step ${out.length + 1}: Safari was left or the game paused` : ''}`;
     if (hw.game === g) { g.autoplay = false; g.onHighlight = hl; g.to = to; }
     hw.setScale(scale0);
     hw.lockScale(false);
+    const stopped = bench.stopped;
     bench = null;
-    btn.disabled = false;
-    btn.textContent = 'Bench done';
+    benchBtn.disabled = copyBtn.disabled = false;
+    benchBtn.textContent = stopped ? 'Bench (stopped)' : 'Bench done';
+    copyBtn.textContent = 'Copy report';
     render();
   }
 

@@ -49,7 +49,7 @@ function makeRenderer() {
   const q = qualityTier();
   if (renderer) renderer.dispose();
   renderer = new THREE.WebGLRenderer({ canvas, antialias: q !== 'low', powerPreference: 'high-performance', stencil: false });
-  gov.scale = 1;
+  gov.scale = 1; gov.failed = 2;
   renderer.setPixelRatio(basePixelRatio(q));
   renderer.toneMapping = THREE.CustomToneMapping;      // ACES + broadcast grade (look.js)
   renderer.toneMappingExposure = 0.82;
@@ -369,18 +369,24 @@ function frame(now) {
   if (dbg) dbg.frame(real, performance.now() - t0);
 }
 
-// Frame-rate governor (Auto quality only): if a phone can't hold about 50 fps
-// in play, render fewer pixels; hand them back when there's headroom.
-const gov = { t: 0, n: 0, scale: 1, lock: false };
+// Frame-rate governor (Auto quality only): when a phone can't hold 60 fps in
+// play (they slow down as they warm up), render fewer pixels, and hand them
+// back when there's headroom. A scale that just failed isn't retried for a
+// minute, so the resolution doesn't bounce.
+const gov = { t: 0, n: 0, scale: 1, lock: false, clock: 0, failed: 2, failedAt: -1e9 };
 function govern(real) {
-  if (gov.lock || settings.quality !== 'auto' || !game || paused || real > 0.5) { gov.t = gov.n = 0; return; }
+  if (gov.lock || settings.quality !== 'auto' || !game || paused || replay.active || real > 0.5) { gov.t = gov.n = 0; return; }
+  gov.clock += real;
   gov.t += real; gov.n++;
-  if (gov.t < 2.5) return;
+  if (gov.t < 2) return;
   const fps = gov.n / gov.t;
-  gov.t = gov.n = 0;
   let s = gov.scale;
-  if (fps < 48) s = Math.max(0.7, s - 0.1);
-  else if (fps > 57) s = Math.min(1, s + 0.05);
+  if (fps < 57) {
+    gov.failed = s; gov.failedAt = gov.clock;
+    s = Math.max(0.7, Math.round(s * 100 - 5) / 100);
+  } else if (gov.t < 6) return;          // watch a while longer before handing pixels back
+  else if (fps >= 58.5 && s < 1 && (s + 0.05 < gov.failed - 1e-3 || gov.clock - gov.failedAt > 60)) s = Math.min(1, Math.round(s * 100 + 5) / 100);
+  gov.t = gov.n = 0;
   if (s === gov.scale) return;
   gov.scale = s;
   renderer.setPixelRatio(basePixelRatio() * s);
