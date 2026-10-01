@@ -1,6 +1,6 @@
 # Hoops 1v1
 
-Live at **https://livewire.hoops.gamify.com**. This repo is the hosted copy (GitHub Pages). The source lives in [JonnyShan/Multi-View-Screen](https://github.com/JonnyShan/Multi-View-Screen) under `hardwood/`; this copy is from commit `db406a6`.
+Live at **https://livewire.hoops.gamify.com**. This repo is the hosted copy (GitHub Pages). The source lives in [JonnyShan/Multi-View-Screen](https://github.com/JonnyShan/Multi-View-Screen) under `hardwood/`; this copy is from commit `4b01626`.
 
 A 1-on-1 half-court basketball game for phones, built with three.js. Open `index.html` from any static web server.
 
@@ -77,8 +77,8 @@ Bench runs for about 45 seconds and shows a countdown on its button. Copy is off
 
 ## Art and sound
 
-The images and models were generated with Higgsfield: the hardwood texture, team logos, player portraits, cover art, and the player models (full-body reference, then image-to-3D with auto-rigging). The motion clips come from the Higgsfield (Meshy) animation library. They were baked to per-bone rotation deltas by `raw/hardwood/anim/convert_clips.py`, which is kept outside the repo. All teams and players are fictional.
+The images and models were generated with Higgsfield: the hardwood texture, team logos, player portraits, and the player models (full-body reference, then image-to-3D with auto-rigging). The motion clips come from the Higgsfield (Meshy) animation library. They were baked to per-bone rotation deltas by `raw/hardwood/anim/convert_clips.py`, which is kept outside the repo. All teams and players are fictional.
 
-The arena panorama and the fans were generated with Higgsfield. So was the loading-screen ball: a still made with GPT Image 2.5 (with Livewire's wordmark as the reference), turned into a 360° spin with MiniMax H3 (same first and last frame), then re-timed to an even speed with motion interpolation so it loops without a pause. The fan sheets were cut out and packed by `raw/hardwood/gfx/fans_atlas.py`, and the panorama was reprojected by `raw/hardwood/gfx/pano2equirect.py` (both kept outside the repo).
+The title image (`img/cover.webp`), a dunk seen from behind so no face shows, was supplied by the project owner. The title text baked into it was removed with OpenCV inpainting, so the page's own title sits on top. The arena panorama and the fans were generated with Higgsfield. So was the loading-screen ball: a still made with GPT Image 2.5 (with Livewire's wordmark as the reference), turned into a 360° spin with MiniMax H3 (same first and last frame), then re-timed to an even speed with motion interpolation so it loops without a pause. The fan sheets were cut out and packed by `raw/hardwood/gfx/fans_atlas.py`, and the panorama was reprojected by `raw/hardwood/gfx/pano2equirect.py` (both kept outside the repo).
 
 The crowd and rim sounds are real recordings from Freesound, all CC0 (public domain): FC St. Pauli stadium crowd reactions (itmightgetloud, #829453), a roaring crowd (benfree, #130568), fans at a basketball game (phillyfan972, #412160), Rogers Arena game atmosphere (SEF7, #706497), basketball shots in a gym (kyles, #450722), a steel basketball hoop being struck (jimmyfisher, #402662) and missed shots off a gym rim (amsaenz03, #788261). The swish, backboard, dribble and dunk were generated with ElevenLabs.
