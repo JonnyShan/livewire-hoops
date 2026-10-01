@@ -49,7 +49,7 @@ function makeRenderer() {
   const q = qualityTier();
   if (renderer) renderer.dispose();
   renderer = new THREE.WebGLRenderer({ canvas, antialias: q !== 'low', powerPreference: 'high-performance', stencil: false });
-  gov.scale = 1; gov.failed = 2;
+  gov.scale = 1; gov.failed = 2; gov.trial = null; gov.holdUntil = 0;
   renderer.setPixelRatio(basePixelRatio(q));
   renderer.toneMapping = THREE.CustomToneMapping;      // ACES + broadcast grade (look.js)
   renderer.toneMappingExposure = 0.82;
@@ -372,24 +372,39 @@ function frame(now) {
 
 // Frame-rate governor (Auto quality only): when a phone can't hold 60 fps in
 // play (they slow down as they warm up), render fewer pixels, and hand them
-// back when there's headroom. A scale that just failed isn't retried for a
-// minute, so the resolution doesn't bounce. The odd slow frame (a crowd roar,
-// a camera cut) doesn't count: only a 3 s stretch under 54 fps steps down.
-const gov = { t: 0, n: 0, scale: 1, lock: false, clock: 0, failed: 2, failedAt: -1e9 };
+// back when there's headroom. The odd slow frame (a crowd roar, a camera cut)
+// doesn't count: only a 3 s stretch under 54 fps steps down. Each step down is
+// a trial: if the next 6 s aren't at least 2 fps faster, fewer pixels didn't
+// help (the GPU isn't what's short), so the sharper picture comes back and
+// stays for two minutes. A scale that just failed isn't retried for a minute.
+const gov = { t: 0, n: 0, scale: 1, lock: false, clock: 0, failed: 2, failedAt: -1e9, trial: null, holdUntil: 0 };
 function govern(real) {
   if (gov.lock || settings.quality !== 'auto' || !game || paused || replay.active || real > 0.5) { gov.t = gov.n = 0; return; }
   gov.clock += real;
   gov.t += real; gov.n++;
+  const tr = gov.trial;
+  if (tr) {
+    if (gov.t < 6) return;
+    const fps = gov.n / gov.t;
+    gov.t = gov.n = 0; gov.trial = null;
+    if (fps < tr.before + 2) { gov.holdUntil = gov.clock + 120; setGovScale(tr.from); }
+    return;
+  }
   if (gov.t < 3) return;
   const fps = gov.n / gov.t;
   let s = gov.scale;
   if (fps < 54) {
     gov.failed = s; gov.failedAt = gov.clock;
-    s = Math.max(0.7, Math.round(s * 100 - 5) / 100);
+    if (gov.clock >= gov.holdUntil && s > 0.7) {
+      gov.trial = { from: s, before: fps };
+      s = Math.max(0.7, Math.round(s * 100 - 5) / 100);
+    }
   } else if (gov.t < 6) return;          // watch a while longer before handing pixels back
   else if (fps >= 57.5 && s < 1 && (s + 0.05 < gov.failed - 1e-3 || gov.clock - gov.failedAt > 60)) s = Math.min(1, Math.round(s * 100 + 5) / 100);
   gov.t = gov.n = 0;
-  if (s === gov.scale) return;
+  if (s !== gov.scale) setGovScale(s);
+}
+function setGovScale(s) {
   gov.scale = s;
   renderer.setPixelRatio(basePixelRatio() * s);
   resize();
@@ -460,8 +475,8 @@ if (/[?&#]debug\b/.test(location.search + location.hash)) {
       get replayActive() { return replay.active; }, get scale() { return gov.scale; }, get tier() { return qualityTier(); },
       settings, canvas, timing, ldBall, sound, replay, scene,
       start: () => startMatch(),
-      lockScale(on) { gov.lock = on; gov.t = gov.n = 0; },
-      setScale(s) { gov.scale = s; renderer.setPixelRatio(basePixelRatio() * s); resize(); },
+      lockScale(on) { gov.lock = on; gov.t = gov.n = 0; gov.trial = null; },
+      setScale: setGovScale,
     });
   }).catch((e) => console.warn('debug panel failed', e));
 }
