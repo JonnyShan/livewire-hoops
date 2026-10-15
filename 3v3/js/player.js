@@ -96,6 +96,7 @@ const _v1 = new THREE.Vector3();
 const _v2 = new THREE.Vector3();
 const _v3 = new THREE.Vector3();
 const _v4 = new THREE.Vector3();
+const _v5 = new THREE.Vector3();
 const _q = new THREE.Quaternion();
 const _m3 = new THREE.Matrix3();
 const _xb = new THREE.Vector3(), _yb = new THREE.Vector3(), _zb = new THREE.Vector3();
@@ -203,6 +204,13 @@ export class Player {
     this.dribble = { phase: 0, hand: -1, crossing: false, from: -1, active: false, bounced: false };
     this.ikTarget = [null, null];      // [left, right] world targets
     this.ikW = [0, 0];
+    // hand targets are blended in body space: a target that jumps (pass -> catch, shot -> follow-through)
+    // eases across instead of popping, and a hand let go eases back from where it last was
+    this.ikRaw = [new THREE.Vector3(), new THREE.Vector3()];
+    this.ikOff = [new THREE.Vector3(), new THREE.Vector3()];
+    this.ikLast = [new THREE.Vector3(), new THREE.Vector3()];
+    this.ikStep = [new THREE.Vector3(), new THREE.Vector3()];
+    this.ikHas = [false, false];
     this.lookAt = new THREE.Vector3(0, 1.5, 0);
     // foot planting (world-space feet driven by a stepping planner + leg IK)
     const mkFoot = () => ({ pos: new THREE.Vector3(), from: new THREE.Vector3(), to: new THREE.Vector3(), u: 1, dur: 0.2, lift: 0.05, yaw: 0, yawFrom: 0, yawTo: 0, heel: 0 });
@@ -457,6 +465,11 @@ export class Player {
     return out;
   }
 
+  // world -> body space (x left, z forward), height unchanged
+  toLocal(out, w) {
+    const dx = w.x - this.pos.x, dz = w.z - this.pos.z, c = Math.cos(this.yaw), sn = Math.sin(this.yaw);
+    return out.set(dx * c - dz * sn, w.y, dx * sn + dz * c);
+  }
   localToWorld(out, x, y, z) {
     return out.set(x, y, z).applyAxisAngle(_v4.set(0, 1, 0), this.yaw).add(this.pos);
   }
@@ -881,9 +894,40 @@ export class Player {
   // IK pass (call after animate, once targets are known)
   applyIK(dt) {
     const k = 1 - Math.exp(-dt * 20);
+    const decay = Math.exp(-dt * 13), jumpLim = 0.22;
+    const c = Math.cos(this.yaw), sn = Math.sin(this.yaw);
     for (let i = 0; i < 2; i++) {
-      const tgt = this.ikTarget[i];
-      this.ikW[i] = smooth(this.ikW[i], tgt ? 1 : 0, k);
+      let tgt = this.ikTarget[i];
+      const on = !!tgt;
+      if (tgt) {
+        // into body space (x left, z forward, y above the jump)
+        const dx = tgt.x - this.pos.x, dz = tgt.z - this.pos.z;
+        _v5.set(dx * c - dz * sn, tgt.y - this.jumpY, dx * sn + dz * c);
+        const off = this.ikOff[i];
+        const step = this.ikStep[i];
+        if (this.ikHas[i]) {
+          // a jump is a break from the target's own motion (a hand tracking a moving ball is not)
+          const jx = _v5.x - this.ikRaw[i].x, jy = _v5.y - this.ikRaw[i].y, jz = _v5.z - this.ikRaw[i].z;
+          const ex = jx - step.x, ey = jy - step.y, ez = jz - step.z;
+          if (ex * ex + ey * ey + ez * ez > jumpLim * jumpLim) { off.x -= jx; off.y -= jy; off.z -= jz; step.set(0, 0, 0); }
+          else step.set(jx, jy, jz);
+        } else {
+          step.set(0, 0, 0);
+          if (this.ikW[i] > 0.05) off.copy(this.ikLast[i]).sub(_v5);     // picked up again while still letting go
+          else off.set(0, 0, 0);
+        }
+        this.ikRaw[i].copy(_v5);
+        off.multiplyScalar(decay);
+        this.ikLast[i].copy(_v5).add(off);
+        this.ikHas[i] = true;
+      } else {
+        this.ikHas[i] = false;
+      }
+      this.ikW[i] = smooth(this.ikW[i], on ? 1 : 0, k);
+      if (this.ikW[i] > 0.01 && (on || this.ikLast[i].lengthSq() > 0)) {
+        const L = this.ikLast[i];
+        tgt = this.ikTarget[i] = this.localToWorld(new THREE.Vector3(), L.x, L.y + this.jumpY, L.z);
+      }
       if (tgt && this.ikW[i] > 0.01) {
         const side = i === 0 ? 1 : -1;
         const shooting = this.action && this.action.type === 'shoot';

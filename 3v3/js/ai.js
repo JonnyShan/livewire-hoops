@@ -40,6 +40,13 @@ export class TeamAI {
     s.x = (x / l) * mag; s.z = (z / l) * mag; s.mag = mag; s.sprint = sprint;
   }
   stop(i) { this.setMove(i, 0, 0); }
+  // a pass goes on the run: keep heading the way he was, a touch slower
+  carry(i, act) {
+    const s = this.g.ps[i].intent;
+    if (!act.carry) act.carry = { x: s.x, z: s.z };
+    const c = act.carry;
+    this.setMove(i, c.x, c.z, Math.hypot(c.x, c.z) * 0.7);
+  }
   // ease: a short re-step glides rather than lunges
   moveTo(i, x, z, { sprint = false, arrive = 0.25, ease = false } = {}) {
     const me = this.g.players[i].pos;
@@ -122,6 +129,7 @@ export class TeamAI {
     const g = this.g, st = g.state, me = g.players[i];
     if (st === 'over') { this.stop(i); return; }
     if (st === 'inbound') { this.inbound(i); return; }        // (the inbounder holds the ball in a locked pose)
+    if (me.action && me.action.type === 'pass') { this.carry(i, me.action); return; }
     if (me.action && !['stumble', 'jab', 'celebrate', 'steal'].includes(me.action.type)) { this.stop(i); return; }
     if (st === 'tip') { this.tip(i, br); return; }
     if (st === 'dead') { this.deadBall(i); return; }

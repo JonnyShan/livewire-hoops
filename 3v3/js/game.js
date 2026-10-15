@@ -25,6 +25,7 @@ const _f = { x: 0, z: 0 };
 // shot timing (seconds from press)
 export const GATHER = 0.2, AIR = 0.62, T_FULL = 0.74;
 export const M_APEX = (GATHER + AIR * 0.5) / T_FULL;
+const CATCH_T = 0.16;                 // the ball settles into the hands over this long
 const PASS_WIND = 0.1;                // ball leaves the hands this long after the pass starts
 
 // the clocks run only while the ball is live
@@ -234,7 +235,10 @@ export class Game {
     this.lastTouch = i;
     this.pass = null;
     const p = this.players[i];
-    p.action = null;
+    // a rebounder in the air comes down with it (dropping the jump would snap him to the floor)
+    if (!(p.action && p.action.type === 'contest' && p.jumpY > 0.02)) p.action = null;
+    p.catchT = 0;
+    p.toLocal(p.catchFrom || (p.catchFrom = new THREE.Vector3()), this.ball.pos);
     p.dribble.active = true;
     p.dribble.phase = 0.9;
     p.dribble.hand = -1;
@@ -1139,13 +1143,18 @@ export class Game {
       }
       return;
     }
-    // --- receiver reaching for a pass on its way ---
+    // --- receiver: hands up as a target, then reaching out to meet the ball ---
     if (this.state === 'pass' && this.pass && this.pass.to === i && !act) {
-      const d = ball.pos.distanceTo(p.pos);
-      if (d < 3.2) {
-        const h = ball.pos.clone();
-        p.ikTarget[0] = h.clone().add(_v.set(Math.cos(p.yaw), 0, -Math.sin(p.yaw)).multiplyScalar(0.12));
-        p.ikTarget[1] = h.add(_v.set(-Math.cos(p.yaw), 0, Math.sin(p.yaw)).multiplyScalar(0.12));
+      const chest = p.localToWorld(new THREE.Vector3(), 0, 1.22 * s + p.jumpY, 0.34 * s);
+      const d = ball.pos.distanceTo(chest);
+      if (d < 4.5) {
+        const reach = clamp((2.2 - d) / 1.6, 0, 1);
+        const h = chest.clone().lerp(ball.pos, reach * 0.85);
+        _v2.subVectors(h, chest);
+        if (_v2.length() > 0.42 * s) h.copy(chest).addScaledVector(_v2.normalize(), 0.42 * s);   // as far as the arms go
+        const side = _v.set(Math.cos(p.yaw), 0, -Math.sin(p.yaw)).multiplyScalar(0.12 * s);
+        p.ikTarget[0] = h.clone().add(side);
+        p.ikTarget[1] = h.sub(side);
       }
       return;
     }
@@ -1184,7 +1193,8 @@ export class Game {
           const make = this.rng() < this.finishProb(i, false);
           this.launch(i, make, { d: this.distToRim(p, i), three: false, arc: 0.55, soft: true, type: 'layup' });
         }
-      } else {
+      } else if ((act.t - act.gather) / act.air < 0.7) {
+        // the arm stays up after the release and comes down with him
         p.ikTarget[1] = p.localToWorld(new THREE.Vector3(), -0.1 * s, 0, 0.35 * s).setY(2.5 * s + p.jumpY);
       }
       return;
@@ -1249,6 +1259,16 @@ export class Game {
       }
       return;
     }
+    if (act && act.type === 'contest' && hasBall) {
+      // came down with the rebound: both hands on it at the forehead, then into the dribble
+      p.localToWorld(ball.pos, 0, 1.78 * s + p.jumpY, 0.24 * s);
+      const side = _v.set(Math.cos(p.yaw), 0, -Math.sin(p.yaw)).multiplyScalar(0.12 * s);
+      p.ikTarget[0] = ball.pos.clone().add(side);
+      p.ikTarget[1] = ball.pos.clone().sub(side);
+      p.catchT = 0;
+      p.toLocal(p.catchFrom, ball.pos);
+      return;
+    }
     if (act && act.type === 'contest') {
       // the arms swing up with the take-off: low and back while loading, then the hand
       // on the ball's side goes highest and the other a little lower
@@ -1277,6 +1297,18 @@ export class Game {
     }
     if (hasBall && p.dribble.active) {
       p.dribbleBallPos(ball.pos, BALL_R);
+      // just caught it: the ball eases from where it was into both hands, then the dribble starts
+      if (p.catchT < CATCH_T) {
+        p.catchT += dt;
+        const e = clamp(p.catchT / CATCH_T, 0, 1), k = e * e * (3 - 2 * e);
+        const c = p.catchFrom;
+        ball.pos.lerpVectors(p.localToWorld(_v2, c.x, c.y, c.z), ball.pos, k);
+        const side = _v.set(Math.cos(p.yaw), 0, -Math.sin(p.yaw)).multiplyScalar(0.12 * s);
+        p.ikTarget[0] = ball.pos.clone().add(side);
+        p.ikTarget[1] = ball.pos.clone().sub(side);
+        p.dribble.phase = 0.9;
+        return;
+      }
       const hand = ball.pos.clone();
       hand.y = Math.max(ball.pos.y + BALL_R * 0.95, 0.66 * s);
       const idx = p.dribble.crossing ? (p.dribble.phase < 0.45 ? (p.dribble.from > 0 ? 0 : 1) : (p.dribble.from > 0 ? 1 : 0)) : (p.dribble.hand > 0 ? 0 : 1);
@@ -1507,7 +1539,6 @@ export class Game {
     if (!changed && rim) this.shotClock = SHOT_CLOCK;   // a board off the rim resets it
     if (offReb) this.fx('offreb', { i: best });
     else if (sh) this.fx('rebound', { i: best });
-    this.players[best].action = null;
   }
 
   // renderer rebuild support
