@@ -116,6 +116,7 @@ function resize() {
   camera.updateProjectionMatrix();
   resolution.set(w * renderer.getPixelRatio(), h * renderer.getPixelRatio());
   for (const n of nets) n.mat.resolution.copy(resolution);
+  if (endFree) measureEndFree();
 }
 window.addEventListener('resize', () => renderer && resize());
 
@@ -184,8 +185,47 @@ function colorClash(a, b) {
 // on the +z side, looking toward basket A (the one you attack), and follows the
 // ball along the court. When the CPU attacks basket B the play comes toward you.
 const cam = { pos: new THREE.Vector3(0, 9, 24), look: new THREE.Vector3(0, 0.8, 12), shake: 0, mode: 'play', t: 0 };
+const _cl = new THREE.Vector3();
 const _cf = new THREE.Vector3();
+// the victory dance: a long-lens shot of the winners at centre court, framed in
+// the part of the screen the final card leaves free (a view offset, so the card
+// never covers them)
+let endFree = null;
+const endOff = { x: 0, y: 0 };
+function measureEndFree() {
+  const W = window.innerWidth, H = window.innerHeight;
+  const r = document.querySelector('#modEnd .final').getBoundingClientRect();
+  endFree = r.left > W * 0.35 ? { x: 0, y: 0, w: r.left, h: H } : { x: 0, y: 0, w: W, h: Math.max(H * 0.22, r.top) };
+}
+function endCamera(dt, snap) {
+  const E = game.endStage, W = window.innerWidth, H = window.innerHeight;
+  const F = endFree || { x: 0, y: 0, w: W, h: H };
+  camera.fov = 30;
+  const t = Math.tan(THREE.MathUtils.degToRad(15));
+  // fit the line of three, arms up and swaying (about 4.2 m by 2.9 m), inside the free area with a margin
+  const fit = 0.88 * 2 * t;
+  const d = Math.min(18, Math.max(2.9 / ((F.h / H) * fit), 4.2 / ((F.w / W) * camera.aspect * fit)));
+  const k = snap ? 1 : 1 - Math.exp(-dt * 1.8);
+  cam.pos.lerp(_cf.set(E.x, 1.6, E.z + d), k);
+  cam.look.lerp(_cl.set(E.x, 1.2, E.z), k);
+  camera.position.copy(cam.pos);
+  // shift the picture so the dancers sit in the middle of the free area
+  endOff.x += (W / 2 - (F.x + F.w / 2) - endOff.x) * k;
+  endOff.y += (H / 2 - (F.y + F.h / 2) - endOff.y) * k;
+  camera.setViewOffset(W, H, endOff.x, endOff.y, W, H);
+  camera.lookAt(cam.look);
+  fadeHoopB(cam.pos.z);
+}
+// the card can grow after it opens (the Share button appears when the clip is ready)
+if (window.ResizeObserver) new ResizeObserver(() => { if (endFree) measureEndFree(); }).observe(document.querySelector('#modEnd .final'));
+function clearEndCamera() {
+  endFree = null; endOff.x = endOff.y = 0;
+  if (camera.view && camera.view.enabled) camera.clearViewOffset();
+}
+
 function updateCamera(dt, focus, snap = false) {
+  if (game && game.over && game.endStage && game.stateT > 1.1) { endCamera(dt, snap); return; }
+  if (camera.view && camera.view.enabled) clearEndCamera();
   const portrait = camera.aspect < 1;
   const hFov = portrait ? 84 : 62;
   const vFov = THREE.MathUtils.radToDeg(2 * Math.atan(Math.tan(THREE.MathUtils.degToRad(hFov / 2)) / camera.aspect));
@@ -436,6 +476,7 @@ function endToMenu() {
   pause(false);
   replay.skip(); replay.pending = null; endQueued = null;
   $('clipChip').hidden = true;
+  clearEndCamera();
   if (game) game.dispose();
   game = null;
   if (presenter) { presenter.dispose(); presenter = null; }
@@ -448,8 +489,6 @@ function endToMenu() {
 
 function showEnd(res) {
   const you = HOME, opp = AWAY;
-  const winner = res.youWon ? you : opp;
-  $('endPh').style.backgroundImage = `url("${winner.portrait}")`;
   $('endEyebrow').textContent = (res.youWon ? 'Final · Victory' : 'Final · Defeat') + (res.overtime ? ' · Sudden death' : '');
   $('endRes').textContent = res.youWon ? 'You win' : `${opp.abbr[0] + opp.abbr.slice(1).toLowerCase()} wins`;
   $('endScore').textContent = `${you.abbr} ${res.score[0]} – ${res.score[1]} ${opp.abbr}`;
@@ -468,14 +507,19 @@ function showEnd(res) {
     row('Top scorer', mvp < TEAM_SIZE ? `${players[mvp].info.last} ${res.pstats[mvp].pts}` : '', mvp >= TEAM_SIZE ? `${players[mvp].info.last} ${res.pstats[mvp].pts}` : '');
   $('endShare').hidden = !replay.clip;
   const g = game;
-  const open = () => { if (game !== g) return; $('modEnd').hidden = false; $('pad').hidden = true; $('clipChip').hidden = true; };
+  const open = () => {
+    if (game !== g) return;
+    $('modEnd').hidden = false; $('pad').hidden = true; $('clipChip').hidden = true; $('hud').hidden = true;
+    measureEndFree();
+  };
   // a game-winning three or dunk gets its replay before the final card
-  if (replay.pending || replay.active) endQueued = open; else setTimeout(open, 1800);
+  if (replay.pending || replay.active) endQueued = open; else setTimeout(open, 2200);
 }
 
 // ---------- replays ----------
 let endQueued = null, chipT = 0;
 function startReplay() {
+  clearEndCamera();
   $('hud').hidden = true; $('pad').hidden = true; $('clipChip').hidden = true;
   if (presenter) presenter.setHidden(true);
   replay.onDone = () => {

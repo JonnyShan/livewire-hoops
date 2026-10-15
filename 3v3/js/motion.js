@@ -64,6 +64,8 @@ export class MotionLayer {
     this.air = 0;                               // airborne part of a jump
     this.legW = 0;
     this.lastAct = null;
+    this.danceW = 0;                            // a victory dance owns the whole body, head and arms too
+    this.dance = null;
     const moving = (n) => C[n] && C[n].speed > 0.3;
     this.fwd = ['walk', 'jog', 'run', 'sprint'].filter(moving).sort((a, b) => C[a].speed - C[b].speed);
     this.back = ['back'].filter(moving);
@@ -90,12 +92,15 @@ export class MotionLayer {
     const k = (r) => 1 - Math.exp(-dt * r);
     // --- which layer owns the body ---
     const jumping = act && (act.type === 'contest' || act.type === 'shoot') && C.jump;
+    const dancing = act && act.type === 'dance' && C[act.clip] ? act : null;
+    if (dancing) this.dance = dancing;
+    this.danceW += ((dancing ? 1 : 0) - this.danceW) * k(dancing ? 4 : 8);
     // a pass is arms only: the mocap legs keep running under it
-    const standing = !act || act.type === 'check' || act.type === 'celebrate' || act.type === 'pass';
+    const standing = !act || act.type === 'check' || act.type === 'celebrate' || act.type === 'pass' || dancing;
     this.bodyW += ((jumping || standing ? 1 : 0) - this.bodyW) * k(jumping ? 22 : 12);
     this.jumpW += ((jumping ? 1 : 0) - this.jumpW) * k(jumping ? 30 : 8);
     for (let i = 0; i < 2; i++) {
-      let t = act ? 0 : 1 - p.ikW[i];
+      let t = dancing ? 1 : act ? 0 : 1 - p.ikW[i];
       if (!act && p.stance === 'defense') t *= 0.35;
       if (!act && p.dribble.active && (i === 0 ? -1 : 1) !== p.dribble.hand) t *= 0.5;   // off-hand arm bar
       this.armW[i] += (t - this.armW[i]) * k(12);
@@ -138,6 +143,7 @@ export class MotionLayer {
     this.def += ((p.stance === 'defense' ? 1 : p.dribble.active ? 0.55 : 0) - this.def) * k(5);
     if (C.defIdle) { T.idle += idle * (1 - this.def); T.defIdle += idle * this.def; } else T.idle += idle;
     if (T.jump !== undefined) T.jump = 0;
+    for (const n in C) if (n.startsWith('dance')) T[n] = 0;   // sampled on their own below
     // feet stay planted up to 1.35x a clip's own tempo; past that they may glide a little
     const stride = moveSum > 1e-4 ? strideSum / moveSum : 1;
     const cyc = moveSum > 1e-4 ? cycSum / moveSum : 1;
@@ -151,10 +157,10 @@ export class MotionLayer {
     q.fill(0); h.fill(0);
     let tot = 0;
     for (const n in this.w) if (n !== 'jump') tot += this.w[n];
-    const locoShare = 1 - this.jumpW;
+    const locoShare = (1 - this.jumpW) * (1 - this.danceW);
     let used = 0;
     for (const n in this.w) {
-      if (n === 'jump') continue;
+      if (n === 'jump' || n.startsWith('dance')) continue;
       const w = (this.w[n] / Math.max(1e-6, tot)) * locoShare;
       if (w < 0.01) continue;
       const c = C[n];
@@ -173,6 +179,10 @@ export class MotionLayer {
         this.air += (inAir - this.air) * k(18);
       }
     } else this.air += (0 - this.air) * k(18);
+    if (this.danceW > 0.01 && this.dance) {
+      const d = this.dance;
+      sampleClip(lib, C[d.clip], d.t + (d.offset || 0), this.danceW, q, h); used += this.danceW;
+    }
     this.legW = this.bodyW * (1 - 0.7 * this.air * this.jumpW);
     for (let b = 0; b < q.length; b += 4) {
       const l = Math.hypot(q[b], q[b + 1], q[b + 2], q[b + 3]);

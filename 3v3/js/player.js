@@ -651,13 +651,15 @@ export class Player {
         T.hipLZ = 0.06; T.hipRZ = -0.06;
       } else if (act.type === 'layup' || act.type === 'dunk') {
         const air = arc(act.jump, (t - act.gather) / act.air);
-        this.jumpY = act.hang ? act.hangY : air;
+        // onto the rim: from the top of the jump down to hanging off it, fast
+        const k = act.hang ? Math.min(1, (act.hangT || 0) / 0.12) : 0;
+        this.jumpY = act.hang ? act.hangY + ((act.hangFrom ?? act.hangY) - act.hangY) * (1 - k * k) : act.dropT !== undefined ? act.hangY : air;
         const up = t > act.gather;
         T.hipLX = up ? -1.25 : -0.3; T.kneeL = up ? 1.6 : 0.6;   // knee drive
         T.hipRX = up ? 0.25 : -0.2; T.kneeR = up ? 0.35 : 0.5;
         T.ankleR = up ? 0.6 : 0;
         T.spineX = up ? 0.02 : 0.25;
-        if (act.hang) { T.hipLX = -0.3; T.kneeL = 0.5; T.hipRX = -0.2; T.kneeR = 0.4; T.spineX = -0.05; }
+        if (act.hang || act.dropT !== undefined) { T.hipLX = -0.3; T.kneeL = 0.5; T.hipRX = -0.2; T.kneeR = 0.4; T.spineX = -0.05; }
       } else if (act.type === 'contest') {
         // load (sink, arms back) -> explode up -> knees tuck a little at the top -> land
         const t0 = act.t0 ?? 0.1;
@@ -1139,9 +1141,10 @@ export class Player {
     // neck + head: the procedural rig keeps the eyes on the play, mocap adds life
     const dHead = dSpine.clone().multiply(this.neck.quaternion).multiply(this.head.quaternion);
     setWorldQ(bones.neck, RP.clone().multiply(dSpine.clone().slerp(dHead, 0.5)).multiply(rest.neck.q));
-    blend('neck', bodyW * 0.5);
+    const full = M ? M.danceW : 0;           // a dance moves the head too
+    blend('neck', bodyW * (0.5 + 0.5 * full));
     setWorldQ(bones.Head, RP.clone().multiply(dHead).multiply(rest.Head.q));
-    blend('Head', bodyW * 0.4);
+    blend('Head', bodyW * (0.4 + 0.6 * full));
     if (M) { blend('LeftShoulder', armW[0], true); blend('RightShoulder', armW[1], true); }
     else { bones.LeftShoulder.updateWorldMatrix(false, false); bones.RightShoulder.updateWorldMatrix(false, false); }
     // limbs by segment direction

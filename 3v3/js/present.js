@@ -18,7 +18,9 @@ export class Presenter {
     this.el = {
       callout: $('callout'), tag: $('tag'), status: $('status'), meter: $('meter'), fill: $('meterFill'), win: $('meterWin'),
       ptsL: $('ptsL'), ptsR: $('ptsR'), hasL: $('hasL'), hasR: $('hasR'), clock: $('gameClock'), shot: $('shotClock'),
+      dunkRing: $('dunkRing'), dunkProg: $('dunkProg'),
     };
+    this.dunkShown = -1;
     // your ring, and a smaller one under the teammate a pass would go to
     const ring = (r0, r1, color, op) => {
       const m = new THREE.Mesh(new THREE.RingGeometry(r0, r1, 48), new THREE.MeshBasicMaterial({ color, transparent: true, opacity: op, depthWrite: false, toneMapped: false }));
@@ -138,6 +140,9 @@ export class Presenter {
         if (home) this.vibrate(25);
         break;
       }
+      case 'dunkready':
+        if (d.team === 0) this.vibrate([18, 60, 18]);
+        break;
       case 'deflect': S.dribble(1.1, this.pan(g.players[d.i].pos.x)); break;
       case 'pass': S.dribble(0.35, this.pan(g.players[d.i].pos.x)); break;
       case 'catch': S.dribble(0.55, this.pan(g.players[d.i].pos.x)); break;
@@ -146,8 +151,8 @@ export class Presenter {
       case 'rim': S.rim(d.v * this.near(d.x, d.z), this.pan(d.x)); break;
       case 'board': S.board(d.v * this.near(d.x, d.z), this.pan(d.x)); break;
       case 'slam':
-        this.cam.shake = d.big ? 1.25 : 1;
-        this.vibrate(45);
+        this.cam.shake = d.big ? 1.5 : 1.25;
+        this.vibrate(60);
         S.dunk(this.pan(g.rimOf(d.i).x));
         break;
       case 'score': {
@@ -222,6 +227,14 @@ export class Presenter {
     else if (!g.over && c < 10 && c > 0 && g.score[0] <= g.score[1]) status = g.score[0] === g.score[1] ? 'TIED · LAST SECONDS' : 'LAST SECONDS';
     if (status) { if (E.status.textContent !== status) E.status.textContent = status; E.status.classList.add('on'); }
     else E.status.classList.remove('on');
+    // the dunk meter around SHOOT: it fills over 15 seconds of play, then reads DUNK
+    const dm = Math.round(g.dunkMeter[0] * 500) / 500;
+    if (dm !== this.dunkShown) {
+      this.dunkShown = dm;
+      E.dunkProg.style.strokeDashoffset = String(100 * (1 - dm));   // pathLength 100 (index.html)
+      E.dunkProg.classList.toggle('empty', dm <= 0);
+      E.dunkRing.classList.toggle('full', dm >= 1);
+    }
     // your ring (it pulses when you switch), and the pass target under a teammate
     const u = g.user;
     this.ringPulse = Math.max(0, (this.ringPulse || 0) - dt * 3);

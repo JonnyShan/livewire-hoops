@@ -98,6 +98,19 @@ button:focus-visible { outline: 2px solid var(--leather-hi); outline-offset: 3px
 .btn.tiny { width: 58px; height: 58px; right: 44px; bottom: 104px; }
 .btn.down { transform: scale(.92); filter: brightness(1.25); }
 .btn.off { opacity: .35; }
+/* the dunk meter: a ring around SHOOT that fills over 15 seconds of play, then reads DUNK */
+.dunkring { position: absolute; right: -10px; bottom: -10px; width: 112px; height: 112px; pointer-events: none; transform: rotate(-90deg); overflow: visible; }
+.dunkring circle { fill: none; }
+.dunkring .track { stroke: rgba(255,255,255,.2); stroke-width: 4; }
+.dunkring .prog { stroke: var(--leather); stroke-width: 5; stroke-linecap: round; stroke-dasharray: 100; stroke-dashoffset: 100; opacity: .85; }
+.dunkring .prog.empty { visibility: hidden; }
+/* the glow goes on the svg itself: Safari ignores CSS filters on shapes inside an svg */
+.dunkring.full { filter: drop-shadow(0 0 5px #CBFE00); animation: dunkpulse 1s ease-in-out infinite; }
+.dunkring.full .prog { stroke-width: 6; opacity: 1; }
+.dunkbadge { position: absolute; right: 2px; bottom: 84px; width: 56px; height: 20px; border-radius: 10px; display: grid; place-items: center; pointer-events: none;
+  font: 800 11px/1 var(--display); letter-spacing: .14em; text-indent: .14em; color: #CBFE00; background: #1A1A1A; border: 1.5px solid #CBFE00; opacity: 0; transform: scale(.4); transition: opacity .15s, transform .25s cubic-bezier(.3,1.8,.5,1); }
+.dunkring.full + .dunkbadge { opacity: 1; transform: scale(1); }
+@keyframes dunkpulse { 50% { filter: drop-shadow(0 0 11px #CBFE00); } }
 
 /* ---------- menus ---------- */
 .screen { position: fixed; inset: 0; z-index: 8; display: flex; background: var(--ink); overflow: hidden; }
@@ -154,6 +167,16 @@ button:focus-visible { outline: 2px solid var(--leather-hi); outline-offset: 3px
 .final .score { font: 800 22px/1 var(--display); color: var(--dim); font-variant-numeric: tabular-nums; }
 .stats { display: grid; grid-template-columns: 1fr auto auto; gap: 4px 14px; font: 600 14px/1.2 var(--body); font-variant-numeric: tabular-nums; }
 .stats .h { color: var(--dim); font: 700 11px/1 var(--display); letter-spacing: .16em; }
+
+/* the final card sits low (or to the right on a wide screen) so the winners' dance shows above it */
+#modEnd { place-items: end center; background: linear-gradient(0deg, rgba(4,5,8,.9), rgba(4,5,8,.55) 45%, rgba(4,5,8,0) 62%); backdrop-filter: none; -webkit-backdrop-filter: none;
+  padding-bottom: calc(var(--sab) + 16px); }
+#modEnd .final { grid-template-columns: 1fr; width: min(560px, 100%); background: rgba(14,17,24,.92); }
+#modEnd .final .txt { padding: 18px 20px 20px; }
+@media (orientation: landscape) and (min-width: 760px) {
+  #modEnd { place-items: center end; background: linear-gradient(270deg, rgba(4,5,8,.88), rgba(4,5,8,.5) 42%, rgba(4,5,8,0) 60%); padding-right: calc(var(--sar) + 24px); }
+  #modEnd .final { width: min(440px, 46vw); }
+}
 
 /* replay: letterbox, tag, skip hint, a yellow wipe in and out */
 #replayUI { position: fixed; inset: 0; z-index: 6; pointer-events: auto; touch-action: none; }
@@ -243,6 +266,8 @@ button:focus-visible { outline: 2px solid var(--leather-hi); outline-offset: 3px
   <div class="stick idle" id="stick"><div class="nub" id="nub"></div></div>
   <div class="btns">
     <button class="btn big" id="btnA">SHOOT</button>
+    <svg class="dunkring" id="dunkRing" viewBox="0 0 112 112" aria-hidden="true"><circle class="track" cx="56" cy="56" r="52"/><circle class="prog empty" id="dunkProg" cx="56" cy="56" r="52" pathLength="100"/></svg>
+    <div class="dunkbadge" aria-hidden="true">DUNK</div>
     <button class="btn small" id="btnB">PASS</button>
     <button class="btn small tiny" id="btnC">MOVE</button>
   </div>
@@ -263,7 +288,8 @@ button:focus-visible { outline: 2px solid var(--leather-hi); outline-offset: 3px
     <ul>
       <li><b>Teams:</b> three on three, full court. You're Livewire yellow, attacking up the screen. You always play the man with the ball; on defence you play the man nearest it (the yellow ring).</li>
       <li><b>Move:</b> drag anywhere on the left half of the screen. Push to the edge to sprint.</li>
-      <li><b>Shoot:</b> hold SHOOT to rise up, let go at the top of your jump. The green band on the meter is a perfect release. Near the rim while driving, SHOOT becomes a layup or dunk.</li>
+      <li><b>Shoot:</b> hold SHOOT to rise up, let go at the top of your jump. The green band on the meter is a perfect release. Near the rim while driving, SHOOT becomes a layup.</li>
+      <li><b>Dunk:</b> the ring around SHOOT fills over 15 seconds of play. When it reads DUNK, run at the rim and press SHOOT from about the free-throw line in: he goes up high and throws it down. A dunk empties the ring.</li>
       <li><b>Pass:</b> PASS throws to the teammate the stick points at (or the most open one, white ring), led to where he's running. You take over the man who catches it. Defenders can pick off a lazy pass.</li>
       <li><b>Move button:</b> crossover. Pull the stick away from the basket for a step-back, push at your defender for a spin.</li>
       <li><b>Defence:</b> SHOOT becomes BLOCK (jump and contest), PASS becomes SWITCH (take the teammate nearest the ball), MOVE becomes STEAL. Reaching and missing leaves you off balance.</li>
@@ -299,7 +325,6 @@ button:focus-visible { outline: 2px solid var(--leather-hi); outline-offset: 3px
 
 <div class="modal" id="modEnd" hidden>
   <div class="final">
-    <div class="ph" id="endPh"></div>
     <div class="txt">
       <span class="eyebrow" id="endEyebrow">Final</span>
       <div class="res" id="endRes">You win</div>
