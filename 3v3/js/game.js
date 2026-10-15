@@ -817,6 +817,7 @@ export class Game {
   }
 
   resolveSteal(i) {
+    if (this.over || !this.live()) return;      // a swipe started before the buzzer or a dead ball doesn't count
     const s = this.ps[i], p = this.players[i];
     const h = this.handler;
     if (h < 0 || this.teamOf(h) === this.teamOf(i)) return;
@@ -1332,6 +1333,7 @@ export class Game {
   }
 
   scored() {
+    if (this.over) return;
     const sh = this.shot;
     sh.made = true;
     const i = sh.shooter, team = sh.team;
@@ -1372,6 +1374,7 @@ export class Game {
   finish(winner) {
     if (this.over) return;
     this.dropHeld();
+    for (const q of this.players) if (q.action && q.action.type === 'steal') q.action = null;
     this.over = true;
     this.state = 'over';
     this.winner = winner;

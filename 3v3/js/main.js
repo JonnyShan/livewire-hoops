@@ -47,7 +47,7 @@ if (settings.models !== false) for (const u of modelUrls()) loadModel(u).catch((
 loadMotion(MOTION_URL).catch(() => {});
 
 // ---------- renderer ----------
-const canvas = $('gl');
+let canvas = $('gl');
 let renderer, composer, bloom;
 const scene = new THREE.Scene();
 const camera = new THREE.PerspectiveCamera(45, 1, 0.1, 140);
@@ -59,7 +59,16 @@ const basePixelRatio = (q = qualityTier()) => Math.min(window.devicePixelRatio |
 
 function makeRenderer() {
   const q = qualityTier();
-  if (renderer) renderer.dispose();
+  if (renderer) {
+    // a context keeps its attributes (antialias) for its canvas's life, and a disposed renderer
+    // leaves its GL objects behind in it: start on a fresh canvas and let the old context go
+    const old = renderer, c = canvas.cloneNode(false);
+    canvas.replaceWith(c);
+    canvas = c;
+    replay.canvas = c;
+    old.dispose();
+    old.forceContextLoss();
+  }
   renderer = new THREE.WebGLRenderer({ canvas, antialias: q !== 'low', powerPreference: 'high-performance', stencil: false });
   gov.scale = 1; gov.failed = 2; gov.trial = null; gov.holdUntil = 0;
   renderer.setPixelRatio(basePixelRatio(q));
@@ -116,15 +125,36 @@ const sound = new Sound();
 let input = null;
 const replay = new Replay({ camera, sound, canvas });
 
-async function buildMatch(home, away) {
+// free an object tree's GPU geometry, materials and textures (three uploads them again if they're reused)
+function disposeTree(o) {
+  o.traverse((n) => {
+    if (n.geometry) n.geometry.dispose();
+    for (const mt of [].concat(n.material || [])) {
+      for (const v of Object.values(mt)) if (v && v.isTexture) v.dispose();
+      if (mt.uniforms) for (const u of Object.values(mt.uniforms)) if (u && u.value && u.value.isTexture) u.value.dispose();
+      mt.dispose();
+    }
+  });
+}
+
+// builds run one at a time, so a later one's clear-up removes all of an earlier one
+let buildChain = Promise.resolve(), builtTier = null;
+function buildMatch(home, away) {
+  const run = buildChain.then(() => buildMatchNow(home, away));
+  buildChain = run.catch(() => {});
+  return run;
+}
+
+async function buildMatchNow(home, away) {
   // the players are most of the download: start them first, in parallel with the arena
   if (settings.models !== false) for (const u of modelUrls()) loadModel(u).catch(() => {});
   loadMotion(MOTION_URL).catch(() => {});
   // clear previous
-  if (arena) scene.remove(arena.group);
-  for (const p of players) scene.remove(p.group);
-  if (ball) { scene.remove(ball.mesh); scene.remove(ball.blob); }
-  for (const n of nets) scene.remove(n.lines);
+  if (arena) { scene.remove(arena.group); if (arena.reflector) arena.reflector.dispose(); disposeTree(arena.group); }
+  for (const p of players) { scene.remove(p.group); disposeTree(p.group); }
+  if (ball) { scene.remove(ball.mesh); scene.remove(ball.blob); disposeTree(ball.mesh); disposeTree(ball.blob); }
+  for (const n of nets) { scene.remove(n.lines); disposeTree(n.lines); }
+  builtTier = null;
   arena = await buildArena(scene, renderer, { home, away, quality: qualityTier() });
   applyLook();
   players = [];
@@ -138,6 +168,7 @@ async function buildMatch(home, away) {
   }));
   ball = new Ball(scene);
   nets = [new Net(scene, resolution, 0), new Net(scene, resolution, 1)];
+  builtTier = qualityTier();
   resize();
 }
 
@@ -339,17 +370,18 @@ if (sideways.addEventListener) sideways.addEventListener('change', onTurn); else
 
 // a quality change mid-game rebuilds the scene; the game holds still until it's back
 let rebuilding = false;
+let rebuildTok = 0;
 async function rebuildRenderer() {
   makeRenderer();
-  if (!game) return;
-  const g = game;
+  if (!game || game.over) return;
+  const g = game, tok = ++rebuildTok;
   rebuilding = true;
   replay.skip(); replay.pending = null;
   const snap = g.snapshot();
   const old = g.players.map((p) => ({ pos: p.pos.clone(), vel: p.vel.clone(), yaw: p.yaw }));
   try {
     await buildMatch(HOME, AWAY);
-    if (game !== g) return;
+    if (game !== g || tok !== rebuildTok) return;      // a newer rebuild (or a new game) takes over
     // the new bodies stand where the old ones stood
     players.forEach((p, i) => { p.pos.copy(old[i].pos); p.vel.copy(old[i].vel); p.yaw = old[i].yaw; });
     g.rebind({ arena, players, ball, nets });
@@ -357,7 +389,7 @@ async function rebuildRenderer() {
     presenter = makePresenter();
     g.restore(snap);
     replay.bind({ players, ball, net: nets[0], game: g, renderer });
-  } finally { rebuilding = false; }
+  } finally { if (tok === rebuildTok) rebuilding = false; }
 }
 
 function makePresenter() {
@@ -367,10 +399,11 @@ function makePresenter() {
 async function startMatch(opts = {}) {
   const t0 = performance.now();
   pause(false);
-  showLoader();
   show(null);
   const home = HOME, away = AWAY;
-  await buildMatch(home, away);
+  // the arena and players are reused game to game; they're only rebuilt for a new quality tier
+  await buildChain;
+  if (!arena || builtTier !== qualityTier()) { showLoader(); await buildMatch(home, away); }
   $('bugLogoL').src = home.logo; $('bugLogoR').src = away.logo;
   $('bugAbbrL').textContent = home.abbr; $('bugAbbrR').textContent = away.abbr;
   $('bugL').style.setProperty('--team', home.primary);
@@ -591,7 +624,7 @@ if (/[?&#]debug\b/.test(location.search + location.hash)) {
     dbg = m.startDebug({
       get renderer() { return renderer; }, get game() { return game; }, get paused() { return paused; }, get arena() { return arena; },
       get replayActive() { return replay.active; }, get scale() { return gov.scale; }, get tier() { return qualityTier(); },
-      settings, canvas, timing, ldBall, sound, replay, scene,
+      settings, get canvas() { return canvas; }, timing, ldBall, sound, replay, scene,
       start: (o) => startMatch(o),
       lockScale(on) { gov.lock = on; gov.t = gov.n = 0; gov.trial = null; },
       setScale: setGovScale,

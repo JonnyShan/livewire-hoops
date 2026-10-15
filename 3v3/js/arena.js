@@ -385,7 +385,14 @@ export async function buildArena(scene, renderer, { home, away, quality }) {
   const ky = new THREE.Vector3().crossVectors(kz, kx);
   const texel = SHADOW_SPAN / sm;
   const _c = new THREE.Vector3();
+  // one warm pool of light rides with the play (a spot light at each end would light every pixel twice)
+  const spot = new THREE.SpotLight('#ffe7c4', 30, 30, 0.46, 0.75, 1.6);
+  group.add(spot, spot.target);
   const follow = (x, z) => {
+    // (z is where the camera looks, a few metres up the floor from the play)
+    const sz = THREE.MathUtils.clamp(z + 2.8, 4, COURT.len - 4);
+    spot.position.set(0, 13, sz);
+    spot.target.position.set(0, 0, sz);
     // snap the frustum to whole shadow-map texels so the shadows don't crawl as it moves
     _c.set(x, 0, z);
     const a = _c.dot(kx), b = _c.dot(ky);
@@ -397,14 +404,6 @@ export async function buildArena(scene, renderer, { home, away, quality }) {
   const fill = new THREE.DirectionalLight('#dfe8ff', 0.18);
   fill.position.set(-6, 10, -4);
   group.add(fill);
-  // warm pools of light over each end
-  for (const b of BASKETS) {
-    const spot = new THREE.SpotLight('#ffe7c4', 30, 30, 0.46, 0.75, 1.6);
-    const z = b.baseZ + b.dir * 4;
-    spot.position.set(0, 13, z);
-    spot.target.position.set(0, 0, z);
-    group.add(spot, spot.target);
-  }
 
   // dark arena floor beyond the court
   const ground = new THREE.Mesh(

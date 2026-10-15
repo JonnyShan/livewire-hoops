@@ -99,6 +99,7 @@ const _v4 = new THREE.Vector3();
 const _q = new THREE.Quaternion();
 const _m3 = new THREE.Matrix3();
 const _xb = new THREE.Vector3(), _yb = new THREE.Vector3(), _zb = new THREE.Vector3();
+const _oP = new THREE.Vector3(), _oQ = new THREE.Quaternion(), _oS = new THREE.Vector3();
 
 const smooth = (a, b, k) => a + (b - a) * k;
 const clamp = (x, a, b) => Math.max(a, Math.min(b, x));
@@ -1033,10 +1034,12 @@ export class Player {
     this.root.updateMatrixWorld(true);
     const Rq = _q.setFromAxisAngle(_v4.set(0, 1, 0), this.yaw).clone();
     const W = (o, out) => o.getWorldPosition(out);
+    // bones are set parent before child, so a parent's world matrix is always current here:
+    // read its rotation from it and update only this bone (the render updates the rest)
+    const parentQ = (b) => (b.parent.matrixWorld.decompose(_oP, _oQ, _oS), _oQ);
     const setWorldQ = (bone, q) => {
-      const pq = bone.parent.getWorldQuaternion(new THREE.Quaternion());
-      bone.quaternion.copy(pq.invert().multiply(q));
-      bone.updateMatrixWorld(true);
+      bone.quaternion.copy(parentQ(bone).invert().multiply(q));
+      bone.updateWorldMatrix(false, false);
     };
     // mocap layer: pull a bone's local rotation toward the clip pose. The clip
     // stores rest-relative world deltas (character space), re-based on this
@@ -1045,13 +1048,13 @@ export class Player {
     const blend = (name, w, fromRest = false) => {
       const b = bones[name];
       if (fromRest) b.quaternion.copy(rest[name].local);
-      if (!M || w < 0.001) { if (fromRest) b.updateMatrixWorld(true); return; }
+      if (!M || w < 0.001) { if (fromRest) b.updateWorldMatrix(false, false); return; }
       const pn = b.parent.name;
       const local = lib.index[pn] !== undefined
         ? mocapQ(pn).invert().multiply(mocapQ(name))
-        : b.parent.getWorldQuaternion(new THREE.Quaternion()).invert().multiply(Rq.clone().multiply(mocapQ(name)));
+        : parentQ(b).invert().multiply(Rq.clone().multiply(mocapQ(name)));
       b.quaternion.slerp(local, w);
-      b.updateMatrixWorld(true);
+      b.updateWorldMatrix(false, false);
     };
     const bodyW = M ? M.bodyW : 0, legW = M ? M.legW : 0, armW = M ? M.armW : [0, 0];
     const tmpQ = new THREE.Quaternion();
@@ -1066,7 +1069,7 @@ export class Player {
       hipsPos.lerp(mp, legW);
     }
     const hb = bones.Hips;
-    hb.parent.updateMatrixWorld(true);
+    hb.parent.updateWorldMatrix(true, false);
     hb.position.copy(hb.parent.worldToLocal(hipsPos));
     setWorldQ(hb, RP.clone().multiply(rest.Hips.q));
     blend('Hips', bodyW);
@@ -1085,6 +1088,7 @@ export class Player {
     setWorldQ(bones.Head, RP.clone().multiply(dHead).multiply(rest.Head.q));
     blend('Head', bodyW * 0.4);
     if (M) { blend('LeftShoulder', armW[0], true); blend('RightShoulder', armW[1], true); }
+    else { bones.LeftShoulder.updateWorldMatrix(false, false); bones.RightShoulder.updateWorldMatrix(false, false); }
     // limbs by segment direction
     const limb = (name, from, to) => {
       const a = W(from, new THREE.Vector3()), b = W(to, new THREE.Vector3());
