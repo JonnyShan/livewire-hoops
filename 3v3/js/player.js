@@ -1021,6 +1021,17 @@ export class Player {
       LeftUpLeg: dir('LeftUpLeg', 'LeftLeg'), LeftLeg: dir('LeftLeg', 'LeftFoot'), LeftFoot: dir('LeftFoot', 'LeftToeBase'),
       RightUpLeg: dir('RightUpLeg', 'RightLeg'), RightLeg: dir('RightLeg', 'RightFoot'), RightFoot: dir('RightFoot', 'RightToeBase'),
     };
+    // every body rests its arms at the angles of the rig the motion was captured on: the clips are
+    // rest-relative, so a body built with its hands out wide would play every clip hands-out-wide
+    for (const side of ['Left', 'Right']) {
+      for (const [seg, moved, ang] of [['Arm', ['Arm'], 0.35], ['ForeArm', ['ForeArm', 'Hand'], 0.39]]) {
+        const d = restDir[side + seg], r = Math.hypot(d.x, d.y);
+        const t = new THREE.Vector3(Math.sign(d.x) * Math.sin(ang) * r, -Math.cos(ang) * r, d.z).normalize();
+        const C = new THREE.Quaternion().setFromUnitVectors(d, t);
+        for (const n of moved) if (rest[side + n]) rest[side + n].q.premultiply(C);
+        d.copy(t);
+      }
+    }
     // fit the invisible driver rig to the model's proportions
     const L = this.L, s = this.s;
     const hipMid = rest.LeftUpLeg.p.clone().add(rest.RightUpLeg.p).multiplyScalar(0.5);
