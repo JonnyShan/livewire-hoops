@@ -2,6 +2,8 @@
 
 Live at **https://livewire.hoops.gamify.com**. This repo is the hosted copy (GitHub Pages). The source lives in [JonnyShan/Multi-View-Screen](https://github.com/JonnyShan/Multi-View-Screen) under `hardwood/`; this copy is from commit `e41a417`.
 
+The 3-on-3 full-court game (preview) is at **https://livewire.hoops.gamify.com/3v3/** (`3v3/`, from `hoops3v3/` in the source repo).
+
 A 1-on-1 half-court basketball game for phones, built with three.js. Open `index.html` from any static web server.
 
 ## What's in it
