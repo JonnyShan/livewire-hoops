@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
 <meta name="theme-color" content="#07090d">
 <meta name="apple-mobile-web-app-capable" content="yes">
-<title>Hoops 1v1</title>
+<title>Hoops 3v3</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Semi+Condensed:wght@500;600;700&family=Saira+Extra+Condensed:wght@600;700;800;900&display=swap">
@@ -56,7 +56,9 @@ button:focus-visible { outline: 2px solid var(--leather-hi); outline-offset: 3px
 .bug .has.on { opacity: 1; }
 .bug .mid { background: #000; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 2px 12px; min-width: 64px; }
 .bug .sc { font: 700 26px/1 var(--display); color: var(--led); text-shadow: 0 0 10px rgba(255,59,47,.6); font-variant-numeric: tabular-nums; }
-.bug .to { font: 700 10px/1 var(--display); letter-spacing: .14em; color: var(--dim); margin-top: 2px; }
+.bug .to { font: 700 10px/1 var(--display); letter-spacing: .14em; color: var(--dim); margin-top: 2px; font-variant-numeric: tabular-nums; }
+.bug .to::before { content: 'SHOT '; }
+.bug .sc.low { color: #ff5a3c; }
 .status { position: absolute; top: calc(var(--sat) + 58px); left: 50%; transform: translateX(-50%);
   font: 700 13px/1 var(--display); letter-spacing: .16em; padding: 5px 10px; background: var(--leather); color: var(--brand-black); opacity: 0; transition: opacity .2s; }
 .status.on { opacity: 1; }
@@ -75,6 +77,13 @@ button:focus-visible { outline: 2px solid var(--leather-hi); outline-offset: 3px
 @keyframes tag { 0% { opacity: 0; transform: translate(-50%,-80%); } 15% { opacity: 1; transform: translate(-50%,-100%); } 75% { opacity: 1; } 100% { opacity: 0; transform: translate(-50%,-130%); } }
 .pause { position: absolute; z-index: 5; top: calc(var(--sat) + 10px); left: calc(var(--sal) + 12px); width: 40px; height: 40px; border-radius: 50%; background: var(--panel); border: 1px solid var(--line); pointer-events: auto; display: grid; place-items: center; }
 .pause::before { content: ""; width: 12px; height: 14px; border-left: 4px solid var(--chalk); border-right: 4px solid var(--chalk); }
+/* mute: just right of pause */
+.mute { position: absolute; z-index: 5; top: calc(var(--sat) + 10px); left: calc(var(--sal) + 60px); width: 40px; height: 40px; border-radius: 50%; background: var(--panel); border: 1px solid var(--line); pointer-events: auto; display: grid; place-items: center; color: var(--chalk); padding: 0; }
+.mute svg { width: 20px; height: 20px; }
+.mute .x { display: none; }
+.mute.off .waves { display: none; }
+.mute.off .x { display: inline; }
+.mute.off { color: var(--dim); }
 
 /* ---------- touch controls ---------- */
 #pad { position: fixed; inset: 0; pointer-events: auto; touch-action: none; z-index: 2; }
@@ -89,6 +98,19 @@ button:focus-visible { outline: 2px solid var(--leather-hi); outline-offset: 3px
 .btn.tiny { width: 58px; height: 58px; right: 44px; bottom: 104px; }
 .btn.down { transform: scale(.92); filter: brightness(1.25); }
 .btn.off { opacity: .35; }
+/* the dunk meter: a ring around SHOOT that fills over 15 seconds of play, then reads DUNK */
+.dunkring { position: absolute; right: -10px; bottom: -10px; width: 112px; height: 112px; pointer-events: none; transform: rotate(-90deg); overflow: visible; }
+.dunkring circle { fill: none; }
+.dunkring .track { stroke: rgba(255,255,255,.2); stroke-width: 4; }
+.dunkring .prog { stroke: var(--leather); stroke-width: 5; stroke-linecap: round; stroke-dasharray: 100; stroke-dashoffset: 100; opacity: .85; }
+.dunkring .prog.empty { visibility: hidden; }
+/* the glow goes on the svg itself: Safari ignores CSS filters on shapes inside an svg */
+.dunkring.full { filter: drop-shadow(0 0 5px #CBFE00); animation: dunkpulse 1s ease-in-out infinite; }
+.dunkring.full .prog { stroke-width: 6; opacity: 1; }
+.dunkbadge { position: absolute; right: 2px; bottom: 84px; width: 56px; height: 20px; border-radius: 10px; display: grid; place-items: center; pointer-events: none;
+  font: 800 11px/1 var(--display); letter-spacing: .14em; text-indent: .14em; color: #CBFE00; background: #1A1A1A; border: 1.5px solid #CBFE00; opacity: 0; transform: scale(.4); transition: opacity .15s, transform .25s cubic-bezier(.3,1.8,.5,1); }
+.dunkring.full + .dunkbadge { opacity: 1; transform: scale(1); }
+@keyframes dunkpulse { 50% { filter: drop-shadow(0 0 11px #CBFE00); } }
 
 /* ---------- menus ---------- */
 .screen { position: fixed; inset: 0; z-index: 8; display: flex; background: var(--ink); overflow: hidden; }
@@ -129,6 +151,8 @@ button:focus-visible { outline: 2px solid var(--leather-hi); outline-offset: 3px
 .lbl { font: 700 11px/1 var(--display); letter-spacing: .2em; color: var(--dim); margin-right: 8px; text-transform: uppercase; }
 
 .modal { position: fixed; inset: 0; z-index: 10; display: grid; place-items: center; background: rgba(4,5,8,.72); backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px); padding: 16px; }
+/* How to play and Settings open over the Timeout sheet (they're opened from it) */
+#modHow, #modSettings { z-index: 11; }
 .sheet { width: min(560px, 100%); max-height: 100%; overflow: auto; background: var(--panel-solid); border: 1px solid var(--line); padding: 22px; display: flex; flex-direction: column; gap: 14px; }
 .sheet h3 { font: 800 28px/1 var(--display); text-transform: uppercase; letter-spacing: .04em; }
 .sheet p, .sheet li { font: 500 15px/1.4 var(--body); color: #c9ced8; }
@@ -143,6 +167,16 @@ button:focus-visible { outline: 2px solid var(--leather-hi); outline-offset: 3px
 .final .score { font: 800 22px/1 var(--display); color: var(--dim); font-variant-numeric: tabular-nums; }
 .stats { display: grid; grid-template-columns: 1fr auto auto; gap: 4px 14px; font: 600 14px/1.2 var(--body); font-variant-numeric: tabular-nums; }
 .stats .h { color: var(--dim); font: 700 11px/1 var(--display); letter-spacing: .16em; }
+
+/* the final card sits low (or to the right on a wide screen) so the winners' dance shows above it */
+#modEnd { place-items: end center; background: linear-gradient(0deg, rgba(4,5,8,.9), rgba(4,5,8,.55) 45%, rgba(4,5,8,0) 62%); backdrop-filter: none; -webkit-backdrop-filter: none;
+  padding-bottom: calc(var(--sab) + 16px); }
+#modEnd .final { grid-template-columns: 1fr; width: min(560px, 100%); background: rgba(14,17,24,.92); }
+#modEnd .final .txt { padding: 18px 20px 20px; }
+@media (orientation: landscape) and (min-width: 760px) {
+  #modEnd { place-items: center end; background: linear-gradient(270deg, rgba(4,5,8,.88), rgba(4,5,8,.5) 42%, rgba(4,5,8,0) 60%); padding-right: calc(var(--sar) + 24px); }
+  #modEnd .final { width: min(440px, 46vw); }
+}
 
 /* replay: letterbox, tag, skip hint, a yellow wipe in and out */
 #replayUI { position: fixed; inset: 0; z-index: 6; pointer-events: auto; touch-action: none; }
@@ -172,8 +206,9 @@ button:focus-visible { outline: 2px solid var(--leather-hi); outline-offset: 3px
   .wordmark { font-size: clamp(56px, 13vh + 40px, 120px); }
   .title .col { gap: 12px; }
 }
-/* narrow phones in portrait: a tighter score bug, so it clears the pause button */
+/* narrow phones in portrait: a tighter score bug at the right, so it clears the pause and mute buttons */
 @media (max-width: 480px) {
+  .bug { left: auto; right: calc(var(--sar) + 8px); transform: none; }
   .bug .side { gap: 5px; padding: 3px 7px 3px 4px; }
   .bug .side.r { padding: 3px 4px 3px 7px; }
   .bug img { width: 22px; height: 22px; }
@@ -215,22 +250,26 @@ button:focus-visible { outline: 2px solid var(--leather-hi); outline-offset: 3px
 <div id="hud" hidden>
   <div class="bug">
     <div class="side l" id="bugL"><img alt="" id="bugLogoL"><span class="abbr" id="bugAbbrL">BAY</span><span class="pts" id="ptsL">0</span><i class="has" id="hasL"></i></div>
-    <div class="mid"><span class="sc" id="shotClock">12</span><span class="to" id="gameTo">TO 11</span></div>
+    <div class="mid"><span class="sc" id="gameClock">2:00</span><span class="to" id="shotClock">14</span></div>
     <div class="side r" id="bugR"><img alt="" id="bugLogoR"><span class="abbr" id="bugAbbrR">MSA</span><span class="pts" id="ptsR">0</span><i class="has" id="hasR"></i></div>
   </div>
-  <div class="status" id="status">CLEAR THE BALL</div>
+  <div class="status" id="status"></div>
   <div class="callout" id="callout"></div>
   <button class="clipchip" id="clipChip" hidden>Share clip ↗</button>
   <div class="meter" id="meter"><div class="win" id="meterWin"></div><div class="fill" id="meterFill"></div></div>
   <div class="tag" id="tag"></div>
   <button class="pause" id="pauseBtn" aria-label="Pause"></button>
+  <button class="mute" id="muteBtn" aria-label="Mute" aria-pressed="false"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 9h4l5-4v14l-5-4H4z" fill="currentColor"/><path class="waves" d="M16.5 8.5a5 5 0 0 1 0 7M19 6a8.5 8.5 0 0 1 0 12"/><path class="x" d="M16 9l6 6M22 9l-6 6"/></svg></button>
 </div>
 
 <div id="pad" hidden>
   <div class="stick idle" id="stick"><div class="nub" id="nub"></div></div>
   <div class="btns">
     <button class="btn big" id="btnA">SHOOT</button>
-    <button class="btn small" id="btnB">MOVE</button>
+    <svg class="dunkring" id="dunkRing" viewBox="0 0 112 112" aria-hidden="true"><circle class="track" cx="56" cy="56" r="52"/><circle class="prog empty" id="dunkProg" cx="56" cy="56" r="52" pathLength="100"/></svg>
+    <div class="dunkbadge" aria-hidden="true">DUNK</div>
+    <button class="btn small" id="btnB">PASS</button>
+    <button class="btn small tiny" id="btnC">MOVE</button>
   </div>
 </div>
 
@@ -247,12 +286,15 @@ button:focus-visible { outline: 2px solid var(--leather-hi); outline-offset: 3px
   <div class="sheet">
     <h3>How to play</h3>
     <ul>
+      <li><b>Teams:</b> three on three, full court. You're Livewire yellow, attacking up the screen. You always play the man with the ball; on defence you play the man nearest it (the yellow ring).</li>
       <li><b>Move:</b> drag anywhere on the left half of the screen. Push to the edge to sprint.</li>
-      <li><b>Shoot:</b> hold SHOOT to rise up, let go at the top of your jump. The green band on the meter is a perfect release. Near the rim while driving, SHOOT becomes a layup or dunk.</li>
-      <li><b>Move button:</b> crossover. Pull the stick toward half court for a step-back, push at your defender for a spin.</li>
-      <li><b>Defense:</b> SHOOT becomes BLOCK (jump and contest), MOVE becomes STEAL. Reaching and missing leaves you off balance.</li>
-      <li><b>Rules:</b> 2s and 3s, first to the target wins. 12-second shot clock. After a defensive rebound or steal you must clear the ball past the arc.</li>
-      <li><b>Keyboard:</b> WASD or arrows, Shift to sprint, J or Space = SHOOT/BLOCK, K = MOVE/STEAL, P = pause.</li>
+      <li><b>Shoot:</b> hold SHOOT to rise up, let go at the top of your jump. The green band on the meter is a perfect release. Near the rim while driving, SHOOT becomes a layup.</li>
+      <li><b>Dunk:</b> the ring around SHOOT fills over 15 seconds of play. When it reads DUNK, run at the rim and press SHOOT from about the free-throw line in: he goes up high and throws it down. A dunk empties the ring.</li>
+      <li><b>Pass:</b> PASS throws to the teammate the stick points at (or the most open one, white ring), led to where he's running. You take over the man who catches it. Defenders can pick off a lazy pass.</li>
+      <li><b>Move button:</b> crossover. Pull the stick away from the basket for a step-back, push at your defender for a spin.</li>
+      <li><b>Defence:</b> SHOOT becomes BLOCK (jump and contest), PASS becomes SWITCH (take the teammate nearest the ball), MOVE becomes STEAL. Reaching and missing leaves you off balance.</li>
+      <li><b>Rules:</b> one 2-minute game, 2s and 3s, 14-second shot clock. No fouls. A tie goes to sudden death: next basket wins. Score three in a row and you're on fire until the other team scores.</li>
+      <li><b>Keyboard:</b> WASD or arrows, Shift to sprint, J or Space = SHOOT/BLOCK, L = PASS/SWITCH, K = MOVE/STEAL, P = pause.</li>
     </ul>
     <div class="row"><button class="cta" data-close>Got it</button></div>
   </div>
@@ -283,7 +325,6 @@ button:focus-visible { outline: 2px solid var(--leather-hi); outline-offset: 3px
 
 <div class="modal" id="modEnd" hidden>
   <div class="final">
-    <div class="ph" id="endPh"></div>
     <div class="txt">
       <span class="eyebrow" id="endEyebrow">Final</span>
       <div class="res" id="endRes">You win</div>

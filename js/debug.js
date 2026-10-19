@@ -212,12 +212,11 @@ export function startDebug(hw) {
     benchBtn.disabled = copyBtn.disabled = true;
     copyBtn.textContent = 'Wait…';
     render();
-    await hw.start();
+    await hw.start({ autoplay: true });
     const g = hw.game, R = hw.renderer, scene = hw.scene, refl = hw.arena.reflector;
-    const hl = g.onHighlight, to = g.to, scale0 = hw.scale;
-    g.autoplay = true;
+    const hl = g.onHighlight, scale0 = hw.scale;
     g.onHighlight = null;
-    g.to = 999;                         // no final buzzer mid-bench
+    g.frozen = true;                    // the clocks stand still: no final buzzer mid-bench
     hw.lockScale(true);
     hw.setScale(1);
     const recompile = () => scene.traverse((o) => { if (o.material) for (const m of [].concat(o.material)) m.needsUpdate = true; });
@@ -237,6 +236,8 @@ export function startDebug(hw) {
       // layer 1 is drawn by the main camera only, so the players drop out of the reflection
       ['players not reflected', () => skins.forEach((m) => m.layers.set(1)), () => skins.forEach((m) => m.layers.set(0))],
       ['no crowd', () => { if (fans) fans.visible = false; }, () => { if (fans) fans.visible = true; }],
+      // what the six bodies cost: hide two on each side
+      ['4 of 6 bodies hidden', () => skins.forEach((m, k) => { if (k % 3) m.visible = false; }), () => skins.forEach((m) => { m.visible = true; })],
       ['resolution 70%', () => hw.setScale(0.7), () => hw.setScale(1)],
       ['as is again'],
     ];
@@ -263,7 +264,7 @@ export function startDebug(hw) {
       if (off) off();
     }
     benchOut = `bench (ms to draw a frame; under 16.7 holds 60 fps) ${out.join(' · ') || '-'}${bench.stopped ? ` · stopped at step ${out.length + 1}: Safari was left or the game paused` : ''}`;
-    if (hw.game === g) { g.autoplay = false; g.onHighlight = hl; g.to = to; }
+    if (hw.game === g) { g.setAutoplay(false); g.onHighlight = hl; g.frozen = false; document.getElementById('pad').hidden = false; }
     hw.setScale(scale0);
     hw.lockScale(false);
     const stopped = bench.stopped;

@@ -4,7 +4,7 @@ import * as THREE from 'three';
 import { LineSegments2 } from 'three/addons/lines/LineSegments2.js';
 import { LineSegmentsGeometry } from 'three/addons/lines/LineSegmentsGeometry.js';
 import { LineMaterial } from 'three/addons/lines/LineMaterial.js';
-import { COURT, RIM } from './arena.js';
+import { COURT, RIM, BASKETS } from './court.js';
 
 export const BALL_R = 0.119;
 export const AIR_DRAG = 0.05;          // per second, on the ball's velocity in flight
@@ -105,6 +105,37 @@ export class Ball {
     v.multiplyScalar(1 - AIR_DRAG * h);
     p.addScaledVector(v, h);
 
+    // the rim, glass and stanchion of the nearer basket, worked out in that
+    // basket's own frame (basket B's is the court turned half a turn)
+    const b = p.z < COURT.halfLen ? 0 : 1;
+    if (b === 1) { p.x = -p.x; p.z = COURT.len - p.z; v.x = -v.x; v.z = -v.z; }
+    const n0 = events.length;
+    this.hoop(h, events);
+    for (let k = n0; k < events.length; k++) events[k].b = b;
+    if (b === 1) { p.x = -p.x; p.z = COURT.len - p.z; v.x = -v.x; v.z = -v.z; }
+
+    // floor
+    if (p.y < BALL_R) {
+      p.y = BALL_R;
+      if (v.y < -0.35) {
+        events.push({ type: 'floor', v: -v.y, b });
+        v.y = -v.y * 0.76;
+      } else v.y = 0;
+      v.x *= 0.93; v.z *= 0.93;
+      // rolling
+      this.spin.set(v.z / BALL_R, 0, -v.x / BALL_R);
+      if (Math.hypot(v.x, v.z) < 0.05 && Math.abs(v.y) < 0.05) { v.x = v.z = 0; }
+    }
+
+    // arena walls (keep the ball in the building)
+    if (Math.abs(p.x) > 9.2) { p.x = Math.sign(p.x) * 9.2; v.x *= -0.4; }
+    if (p.z < -3.0) { p.z = -3.0; v.z *= -0.4; }
+    if (p.z > COURT.len + 3.0) { p.z = COURT.len + 3.0; v.z *= -0.4; }
+  }
+
+  // collisions with basket A's hoop; step() turns the ball into basket B's frame for that end
+  hoop(h, events) {
+    const p = this.pos, v = this.vel;
     // rim (torus): nearest point on the ring
     const dx = p.x - RIM.x, dz = p.z - RIM.z;
     const hl = Math.hypot(dx, dz);
@@ -157,24 +188,6 @@ export class Ball {
       v.x *= drag; v.z *= drag; v.y *= Math.pow(0.35, h);
       this.inNet = 0.25;
     }
-
-    // floor
-    if (p.y < BALL_R) {
-      p.y = BALL_R;
-      if (v.y < -0.35) {
-        events.push({ type: 'floor', v: -v.y });
-        v.y = -v.y * 0.76;
-      } else v.y = 0;
-      v.x *= 0.93; v.z *= 0.93;
-      // rolling
-      this.spin.set(v.z / BALL_R, 0, -v.x / BALL_R);
-      if (Math.hypot(v.x, v.z) < 0.05 && Math.abs(v.y) < 0.05) { v.x = v.z = 0; }
-    }
-
-    // arena walls (keep the ball in the building)
-    if (Math.abs(p.x) > 9.2) { p.x = Math.sign(p.x) * 9.2; v.x *= -0.4; }
-    if (p.z < -3.0) { p.z = -3.0; v.z *= -0.4; }
-    if (p.z > 18) { p.z = 18; v.z *= -0.4; }
   }
 
   // visual update
@@ -197,7 +210,9 @@ export class Ball {
 
 // ---------------- net ----------------
 export class Net {
-  constructor(scene, resolution) {
+  // b: which basket's rim it hangs from (court.js BASKETS)
+  constructor(scene, resolution, b = 0) {
+    const RIM = this.rim = BASKETS[b].rim;
     this.N = 12;
     this.R = 6;
     const N = this.N, R = this.R;
@@ -260,6 +275,7 @@ export class Net {
   }
 
   update(dt, ball) {
+    const RIM = this.rim;
     const steps = 2;
     const h = Math.min(dt, 1 / 30) / steps;
     for (let s = 0; s < steps; s++) {

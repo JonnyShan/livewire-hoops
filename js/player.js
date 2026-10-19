@@ -96,22 +96,27 @@ const _v1 = new THREE.Vector3();
 const _v2 = new THREE.Vector3();
 const _v3 = new THREE.Vector3();
 const _v4 = new THREE.Vector3();
+const _v5 = new THREE.Vector3();
 const _q = new THREE.Quaternion();
 const _m3 = new THREE.Matrix3();
 const _xb = new THREE.Vector3(), _yb = new THREE.Vector3(), _zb = new THREE.Vector3();
+const _oP = new THREE.Vector3(), _oQ = new THREE.Quaternion(), _oS = new THREE.Vector3();
 
 const smooth = (a, b, k) => a + (b - a) * k;
 const clamp = (x, a, b) => Math.max(a, Math.min(b, x));
 const ss = (x) => { x = clamp(x, 0, 1); return x * x * (3 - 2 * x); };
+// height of a jump of peak h at u (0 = take-off, 1 = landing): a ballistic parabola
+const arc = (h, u) => (u > 0 && u < 1 ? h * 4 * u * (1 - u) : 0);
 
-function jerseyTexture(team, player, away) {
+// the plain kit (fabric noise and trim) is the same for every player on a side: made once
+const kitBase = new Map();
+function jerseyBase(team, away) {
+  const key = team.id + (away ? '|away' : '');
+  if (kitBase.has(key)) return kitBase.get(key);
   const c = document.createElement('canvas');
   c.width = 1024; c.height = 512;
   const g = c.getContext('2d');
-  const base = away ? '#f3f4f6' : team.jersey;
-  const letters = away ? team.primary : team.letters;
-  const trim = away ? team.secondary : team.letters;
-  g.fillStyle = base;
+  g.fillStyle = away ? '#f3f4f6' : team.jersey;
   g.fillRect(0, 0, 1024, 512);
   // subtle mesh-fabric noise
   const img = g.getImageData(0, 0, 1024, 512);
@@ -121,9 +126,19 @@ function jerseyTexture(team, player, away) {
   }
   g.putImageData(img, 0, 0);
   // hem + collar trim
-  g.fillStyle = trim;
+  g.fillStyle = away ? team.secondary : team.letters;
   g.fillRect(0, 0, 1024, 16);
   g.fillRect(0, 500, 1024, 12);
+  kitBase.set(key, c);
+  return c;
+}
+
+function jerseyTexture(team, player, away) {
+  const c = document.createElement('canvas');
+  c.width = 1024; c.height = 512;
+  const g = c.getContext('2d');
+  const letters = away ? team.primary : team.letters;
+  g.drawImage(jerseyBase(team, away), 0, 0);
   const font = (px, w = 800) => `${w} ${px}px "Saira Extra Condensed", "Arial Narrow", sans-serif`;
   g.textAlign = 'center';
   g.textBaseline = 'middle';
@@ -167,9 +182,10 @@ function shortsTexture(team, away) {
 }
 
 export class Player {
-  constructor(team, { away = false } = {}) {
+  // info: the player (data.js); defaults to the team's star
+  constructor(team, { away = false, info = null } = {}) {
     this.team = team;
-    this.info = team.player;
+    this.info = info || team.player;
     this.away = away;
     const s = this.s = this.info.height / 2.0;
     this.L = {
@@ -188,6 +204,13 @@ export class Player {
     this.dribble = { phase: 0, hand: -1, crossing: false, from: -1, active: false, bounced: false };
     this.ikTarget = [null, null];      // [left, right] world targets
     this.ikW = [0, 0];
+    // hand targets are blended in body space: a target that jumps (pass -> catch, shot -> follow-through)
+    // eases across instead of popping, and a hand let go eases back from where it last was
+    this.ikRaw = [new THREE.Vector3(), new THREE.Vector3()];
+    this.ikOff = [new THREE.Vector3(), new THREE.Vector3()];
+    this.ikLast = [new THREE.Vector3(), new THREE.Vector3()];
+    this.ikStep = [new THREE.Vector3(), new THREE.Vector3()];
+    this.ikHas = [false, false];
     this.lookAt = new THREE.Vector3(0, 1.5, 0);
     // foot planting (world-space feet driven by a stepping planner + leg IK)
     const mkFoot = () => ({ pos: new THREE.Vector3(), from: new THREE.Vector3(), to: new THREE.Vector3(), u: 1, dur: 0.2, lift: 0.05, yaw: 0, yawFrom: 0, yawTo: 0, heel: 0 });
@@ -442,6 +465,11 @@ export class Player {
     return out;
   }
 
+  // world -> body space (x left, z forward), height unchanged
+  toLocal(out, w) {
+    const dx = w.x - this.pos.x, dz = w.z - this.pos.z, c = Math.cos(this.yaw), sn = Math.sin(this.yaw);
+    return out.set(dx * c - dz * sn, w.y, dx * sn + dz * c);
+  }
   localToWorld(out, x, y, z) {
     return out.set(x, y, z).applyAxisAngle(_v4.set(0, 1, 0), this.yaw).add(this.pos);
   }
@@ -587,8 +615,8 @@ export class Player {
       T.hipLZ += 0.16; T.hipRZ -= 0.16;
       // active hands: one high to contest, one low in the passing lane
       this.handsT -= dt;
-      if (this.handsT <= 0) { this.handsHigh = -this.handsHigh; this.handsT = 0.9 + Math.random() * 1.1; }
-      const wig = Math.sin(tt * 9) * 0.1;
+      if (this.handsT <= 0) { this.handsHigh = -this.handsHigh; this.handsT = 1.8 + Math.random() * 1.6; }
+      const wig = Math.sin(tt * 4.2) * 0.045;
       const hiL = this.handsHigh > 0 ? 1 : 0;
       const slideArms = Math.min(1, slideW * spd * 0.5);
       const hL = hiL * (1 - slideArms), hR = (1 - hiL) * (1 - slideArms);
@@ -613,7 +641,7 @@ export class Player {
       if (act.type === 'shoot') {
         // gather (dip) -> rise -> release at apex -> land
         const dip = ss(t / 0.16) * (1 - ss((t - 0.16) / 0.12));
-        const air = act.jump * Math.max(0, Math.sin(clamp((t - 0.2) / act.air, 0, 1) * Math.PI));
+        const air = arc(act.jump, (t - 0.2) / act.air);
         this.jumpY = air;
         T.kneeL = T.kneeR = 0.25 + dip * 0.9 + (air > 0 ? 0.15 : 0);
         T.hipLX = T.hipRX = -0.15 - dip * 0.5;
@@ -622,32 +650,41 @@ export class Player {
         T.spineZ = 0;
         T.hipLZ = 0.06; T.hipRZ = -0.06;
       } else if (act.type === 'layup' || act.type === 'dunk') {
-        const air = act.jump * Math.max(0, Math.sin(clamp((t - act.gather) / act.air, 0, 1) * Math.PI));
-        this.jumpY = act.hang ? act.hangY : air;
+        const air = arc(act.jump, (t - act.gather) / act.air);
+        // onto the rim: from the top of the jump down to hanging off it, fast
+        const k = act.hang ? Math.min(1, (act.hangT || 0) / 0.12) : 0;
+        this.jumpY = act.hang ? act.hangY + ((act.hangFrom ?? act.hangY) - act.hangY) * (1 - k * k) : act.dropT !== undefined ? act.hangY : air;
         const up = t > act.gather;
         T.hipLX = up ? -1.25 : -0.3; T.kneeL = up ? 1.6 : 0.6;   // knee drive
         T.hipRX = up ? 0.25 : -0.2; T.kneeR = up ? 0.35 : 0.5;
         T.ankleR = up ? 0.6 : 0;
         T.spineX = up ? 0.02 : 0.25;
-        if (act.hang) { T.hipLX = -0.3; T.kneeL = 0.5; T.hipRX = -0.2; T.kneeR = 0.4; T.spineX = -0.05; }
+        if (act.hang || act.dropT !== undefined) { T.hipLX = -0.3; T.kneeL = 0.5; T.hipRX = -0.2; T.kneeR = 0.4; T.spineX = -0.05; }
       } else if (act.type === 'contest') {
-        const air = act.jump * Math.max(0, Math.sin(clamp((t - 0.1) / act.air, 0, 1) * Math.PI));
+        // load (sink, arms back) -> explode up -> knees tuck a little at the top -> land
+        const t0 = act.t0 ?? 0.1;
+        const u = (t - t0) / act.air;
+        const air = arc(act.jump, u);
         this.jumpY = air;
-        const dip = ss(t / 0.1) * (1 - ss((t - 0.1) / 0.1));
-        T.kneeL = T.kneeR = 0.3 + dip * 0.7;
-        T.hipLX = T.hipRX = -0.2 - dip * 0.3;
-        T.ankleL = T.ankleR = air > 0.02 ? 0.55 : 0;
-        T.spineX = 0.0;
-        T.hipLZ = 0.08; T.hipRZ = -0.08;
+        const load = ss(t / t0) * (1 - ss((t - t0) / 0.05));
+        const tuck = u > 0 && u < 1 ? Math.sin(Math.PI * u) : 0;
+        T.kneeL = T.kneeR = 0.22 + load * 1.0 + tuck * 0.42;
+        T.hipLX = T.hipRX = -0.12 - load * 0.5 - tuck * 0.3;
+        T.ankleL = T.ankleR = air > 0.02 ? 0.5 : -load * 0.3;
+        T.spineX = 0.08 + load * 0.3 - tuck * 0.06;
+        T.hipLZ = 0.09; T.hipRZ = -0.09;
       } else if (act.type === 'steal') {
         const r = ss(t / 0.12) * (1 - ss((t - 0.28) / 0.15));
         T.spineX += 0.35 * r;
         T.hipLX = -0.9 * r - 0.3; T.kneeL = 1.1 * r + 0.4;
       } else if (act.type === 'stumble') {
-        const w = Math.sin(t * 22) * (1 - t / 0.6);
-        T.spineZ = 0.25 * w; T.spineX = 0.35;
-        T.shLZ = 1.4; T.shRZ = -1.4; T.shLX = -0.6 + w; T.shRX = -0.6 - w;
-        T.hipLZ = 0.3; T.hipRZ = -0.1 + w * 0.2;
+        // off balance: one lurch to the side, arms out to catch it, then recover (no shaking)
+        const k = Math.sin(Math.PI * clamp(t / (act.dur || 0.6), 0, 1));
+        const side = act.side || (this.info.num % 2 ? 1 : -1);
+        T.spineZ = 0.2 * k * side; T.spineX = 0.12 + 0.22 * k;
+        T.shLZ = 0.15 + 0.85 * k; T.shRZ = -0.15 - 0.85 * k; T.shLX = -0.35 * k; T.shRX = -0.35 * k;
+        T.hipLZ = 0.06 + 0.2 * k * Math.max(0, side); T.hipRZ = -0.06 - 0.2 * k * Math.max(0, -side);
+        T.kneeL += 0.25 * k; T.kneeR += 0.25 * k;
       } else if (act.type === 'celebrate') {
         const pump = Math.abs(Math.sin(t * 9));
         T.shRX = -2.3 - pump * 0.4; T.shRZ = -0.3; T.elbowR = -1.4 + pump * 0.5;
@@ -783,7 +820,7 @@ export class Player {
       if (this.chopT <= 0) {
         this.chopSide = 1 - this.chopSide;
         start(this.chopSide, rest[this.chopSide], 0.1, 0.028);
-        this.chopT = 0.13 + Math.random() * 0.05;
+        this.chopT = 0.3 + Math.random() * 0.2;
         return;
       }
     }
@@ -859,9 +896,40 @@ export class Player {
   // IK pass (call after animate, once targets are known)
   applyIK(dt) {
     const k = 1 - Math.exp(-dt * 20);
+    const decay = Math.exp(-dt * 13), jumpLim = 0.22;
+    const c = Math.cos(this.yaw), sn = Math.sin(this.yaw);
     for (let i = 0; i < 2; i++) {
-      const tgt = this.ikTarget[i];
-      this.ikW[i] = smooth(this.ikW[i], tgt ? 1 : 0, k);
+      let tgt = this.ikTarget[i];
+      const on = !!tgt;
+      if (tgt) {
+        // into body space (x left, z forward, y above the jump)
+        const dx = tgt.x - this.pos.x, dz = tgt.z - this.pos.z;
+        _v5.set(dx * c - dz * sn, tgt.y - this.jumpY, dx * sn + dz * c);
+        const off = this.ikOff[i];
+        const step = this.ikStep[i];
+        if (this.ikHas[i]) {
+          // a jump is a break from the target's own motion (a hand tracking a moving ball is not)
+          const jx = _v5.x - this.ikRaw[i].x, jy = _v5.y - this.ikRaw[i].y, jz = _v5.z - this.ikRaw[i].z;
+          const ex = jx - step.x, ey = jy - step.y, ez = jz - step.z;
+          if (ex * ex + ey * ey + ez * ez > jumpLim * jumpLim) { off.x -= jx; off.y -= jy; off.z -= jz; step.set(0, 0, 0); }
+          else step.set(jx, jy, jz);
+        } else {
+          step.set(0, 0, 0);
+          if (this.ikW[i] > 0.05) off.copy(this.ikLast[i]).sub(_v5);     // picked up again while still letting go
+          else off.set(0, 0, 0);
+        }
+        this.ikRaw[i].copy(_v5);
+        off.multiplyScalar(decay);
+        this.ikLast[i].copy(_v5).add(off);
+        this.ikHas[i] = true;
+      } else {
+        this.ikHas[i] = false;
+      }
+      this.ikW[i] = smooth(this.ikW[i], on ? 1 : 0, k);
+      if (this.ikW[i] > 0.01 && (on || this.ikLast[i].lengthSq() > 0)) {
+        const L = this.ikLast[i];
+        tgt = this.ikTarget[i] = this.localToWorld(new THREE.Vector3(), L.x, L.y + this.jumpY, L.z);
+      }
       if (tgt && this.ikW[i] > 0.01) {
         const side = i === 0 ? 1 : -1;
         const shooting = this.action && this.action.type === 'shoot';
@@ -919,13 +987,15 @@ export class Player {
   // ---------- photoreal skinned body (Higgsfield image-to-3D) ----------
   // The procedural rig keeps running invisibly; its joint directions drive the
   // skinned model's bones every frame.
-  async attachSkin(url) {
+  // scale: for a body borrowed from a teammate of another height
+  async attachSkin(url, { scale = 1 } = {}) {
     const [gltf, lib] = await Promise.all([loadModel(url),
       loadMotion(MOTION_URL).catch((e) => { console.warn('mocap library failed, using procedural motion', e); return null; })]);
     const { clone } = await import('three/addons/utils/SkeletonUtils.js');
     const scene = clone(gltf.scene);
     scene.position.set(0, 0, 0);
     scene.rotation.set(0, 0, 0);
+    scene.scale.setScalar(scale);
     scene.updateMatrixWorld(true);
     const bones = {};
     let mesh = null;
@@ -953,6 +1023,17 @@ export class Player {
       LeftUpLeg: dir('LeftUpLeg', 'LeftLeg'), LeftLeg: dir('LeftLeg', 'LeftFoot'), LeftFoot: dir('LeftFoot', 'LeftToeBase'),
       RightUpLeg: dir('RightUpLeg', 'RightLeg'), RightLeg: dir('RightLeg', 'RightFoot'), RightFoot: dir('RightFoot', 'RightToeBase'),
     };
+    // every body rests its arms at the angles of the rig the motion was captured on: the clips are
+    // rest-relative, so a body built with its hands out wide would play every clip hands-out-wide
+    for (const side of ['Left', 'Right']) {
+      for (const [seg, moved, ang] of [['Arm', ['Arm'], 0.35], ['ForeArm', ['ForeArm', 'Hand'], 0.39]]) {
+        const d = restDir[side + seg], r = Math.hypot(d.x, d.y);
+        const t = new THREE.Vector3(Math.sign(d.x) * Math.sin(ang) * r, -Math.cos(ang) * r, d.z).normalize();
+        const C = new THREE.Quaternion().setFromUnitVectors(d, t);
+        for (const n of moved) if (rest[side + n]) rest[side + n].q.premultiply(C);
+        d.copy(t);
+      }
+    }
     // fit the invisible driver rig to the model's proportions
     const L = this.L, s = this.s;
     const hipMid = rest.LeftUpLeg.p.clone().add(rest.RightUpLeg.p).multiplyScalar(0.5);
@@ -993,7 +1074,9 @@ export class Player {
     mesh.material = mat;
     mesh.castShadow = true;
     mesh.receiveShadow = true;
-    mesh.frustumCulled = false;
+    // cull the body when it's off screen: a sphere round the hips, kept up to date in driveSkin
+    mesh.frustumCulled = true;
+    mesh.boundingSphere = new THREE.Sphere(new THREE.Vector3(), 1);
     this.group.add(scene);
     this.skin = { scene, bones, rest, restDir, hipOffset: rest.Hips.p.clone().sub(hipMid), mesh, len: { upper: L.upper, fore: L.fore } };
     if (lib && lib.bones.every((n) => bones[n])) {
@@ -1008,10 +1091,12 @@ export class Player {
     this.root.updateMatrixWorld(true);
     const Rq = _q.setFromAxisAngle(_v4.set(0, 1, 0), this.yaw).clone();
     const W = (o, out) => o.getWorldPosition(out);
+    // bones are set parent before child, so a parent's world matrix is always current here:
+    // read its rotation from it and update only this bone (the render updates the rest)
+    const parentQ = (b) => (b.parent.matrixWorld.decompose(_oP, _oQ, _oS), _oQ);
     const setWorldQ = (bone, q) => {
-      const pq = bone.parent.getWorldQuaternion(new THREE.Quaternion());
-      bone.quaternion.copy(pq.invert().multiply(q));
-      bone.updateMatrixWorld(true);
+      bone.quaternion.copy(parentQ(bone).invert().multiply(q));
+      bone.updateWorldMatrix(false, false);
     };
     // mocap layer: pull a bone's local rotation toward the clip pose. The clip
     // stores rest-relative world deltas (character space), re-based on this
@@ -1020,13 +1105,13 @@ export class Player {
     const blend = (name, w, fromRest = false) => {
       const b = bones[name];
       if (fromRest) b.quaternion.copy(rest[name].local);
-      if (!M || w < 0.001) { if (fromRest) b.updateMatrixWorld(true); return; }
+      if (!M || w < 0.001) { if (fromRest) b.updateWorldMatrix(false, false); return; }
       const pn = b.parent.name;
       const local = lib.index[pn] !== undefined
         ? mocapQ(pn).invert().multiply(mocapQ(name))
-        : b.parent.getWorldQuaternion(new THREE.Quaternion()).invert().multiply(Rq.clone().multiply(mocapQ(name)));
+        : parentQ(b).invert().multiply(Rq.clone().multiply(mocapQ(name)));
       b.quaternion.slerp(local, w);
-      b.updateMatrixWorld(true);
+      b.updateWorldMatrix(false, false);
     };
     const bodyW = M ? M.bodyW : 0, legW = M ? M.legW : 0, armW = M ? M.armW : [0, 0];
     const tmpQ = new THREE.Quaternion();
@@ -1041,7 +1126,7 @@ export class Player {
       hipsPos.lerp(mp, legW);
     }
     const hb = bones.Hips;
-    hb.parent.updateMatrixWorld(true);
+    hb.parent.updateWorldMatrix(true, false);
     hb.position.copy(hb.parent.worldToLocal(hipsPos));
     setWorldQ(hb, RP.clone().multiply(rest.Hips.q));
     blend('Hips', bodyW);
@@ -1056,10 +1141,12 @@ export class Player {
     // neck + head: the procedural rig keeps the eyes on the play, mocap adds life
     const dHead = dSpine.clone().multiply(this.neck.quaternion).multiply(this.head.quaternion);
     setWorldQ(bones.neck, RP.clone().multiply(dSpine.clone().slerp(dHead, 0.5)).multiply(rest.neck.q));
-    blend('neck', bodyW * 0.5);
+    const full = M ? M.danceW : 0;           // a dance moves the head too
+    blend('neck', bodyW * (0.5 + 0.5 * full));
     setWorldQ(bones.Head, RP.clone().multiply(dHead).multiply(rest.Head.q));
-    blend('Head', bodyW * 0.4);
+    blend('Head', bodyW * (0.4 + 0.6 * full));
     if (M) { blend('LeftShoulder', armW[0], true); blend('RightShoulder', armW[1], true); }
+    else { bones.LeftShoulder.updateWorldMatrix(false, false); bones.RightShoulder.updateWorldMatrix(false, false); }
     // limbs by segment direction
     const limb = (name, from, to) => {
       const a = W(from, new THREE.Vector3()), b = W(to, new THREE.Vector3());
@@ -1113,6 +1200,18 @@ export class Player {
       blend(foot, legW);
       if (M) blend(toe, legW, true);
     }
+    this.updateCull();
+  }
+
+  // the culling sphere follows the hips (in the mesh's own space); replays call this too
+  updateCull() {
+    const sk = this.skin;
+    if (!sk) return;
+    const m = sk.mesh;
+    m.updateWorldMatrix(true, false);
+    sk.inv = (sk.inv || new THREE.Matrix4()).copy(m.matrixWorld).invert();
+    m.boundingSphere.center.copy(sk.bones.Hips.getWorldPosition(_v4)).applyMatrix4(sk.inv);
+    m.boundingSphere.radius = 1.6 / m.matrixWorld.getMaxScaleOnAxis();
   }
 }
 

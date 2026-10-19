@@ -12,7 +12,7 @@ export const BRAND = {
 
 export const TEAMS = [
   {
-    id: 'livewire', city: '', name: 'Livewire', abbr: 'MORROW', brand: true,
+    id: 'livewire', city: '', name: 'Livewire', abbr: 'YELLOW', brand: true,
     primary: '#CBFE00', secondary: '#1A1A1A', jersey: '#CBFE00', letters: '#1A1A1A',
     logo: 'img/logo-livewire.png', portrait: 'img/p0.jpg', model: 'models/morrow.json', modelLo: 'models/morrow-lo.json',
     player: {
@@ -23,7 +23,7 @@ export const TEAMS = [
   },
   {
     // Livewire's black kit (the CPU)
-    id: 'livewire-black', city: '', name: 'Livewire', abbr: 'VARGA', brand: true,
+    id: 'livewire-black', city: '', name: 'Livewire', abbr: 'BLACK', brand: true,
     primary: '#F1F3F6', secondary: '#CBFE00', jersey: '#1A1A1A', letters: '#CBFE00',
     logo: 'img/logo-livewire-black.png', portrait: 'img/p1.jpg', model: 'models/varga.json', modelLo: 'models/varga-lo.json',
     player: {
@@ -37,7 +37,7 @@ export const TEAMS = [
     primary: '#C8102E', secondary: '#2B2B2B', jersey: '#C41E35', letters: '#2B2B2B',
     logo: 'img/logo2.png', portrait: 'img/p2.jpg', model: 'models/aneke.json',
     player: {
-      first: 'Chidi', last: 'Aneke', num: 34, pos: 'C', height: 2.13,
+      first: 'Chidi', last: 'Aneke', num: 34, pos: 'C', height: 2.13, model: 'models/aneke.json', modelLo: 'models/aneke-lo.json',
       skin: '#3d2519', hair: { style: 'twists', color: '#0d0907' }, beard: '#0d0907',
       r: { three: 45, mid: 62, finish: 92, dunk: 97, handle: 55, speed: 66, defense: 88, block: 96, steal: 50 },
     },
@@ -47,7 +47,7 @@ export const TEAMS = [
     primary: '#6FA8DC', secondary: '#1C2833', jersey: '#1F2F45', letters: '#8FC1EA',
     logo: 'img/logo3.png', portrait: 'img/p3.jpg', model: 'models/lindqvist.json',
     player: {
-      first: 'Theo', last: 'Lindqvist', num: 21, pos: 'SF', height: 2.03,
+      first: 'Theo', last: 'Lindqvist', num: 21, pos: 'SF', height: 2.03, model: 'models/lindqvist.json', modelLo: 'models/lindqvist-lo.json',
       skin: '#e2b598', hair: { style: 'bun', color: '#c9a25a' }, beard: '#b48d4c',
       r: { three: 86, mid: 84, finish: 78, dunk: 72, handle: 72, speed: 74, defense: 80, block: 62, steal: 68 },
     },
@@ -67,7 +67,7 @@ export const TEAMS = [
     primary: '#1B5E20', secondary: '#FF8F00', jersey: '#23713A', letters: '#FF7A1A',
     logo: 'img/logo5.png', portrait: 'img/p5.jpg', model: 'models/kasumba.json',
     player: {
-      first: 'Andre', last: 'Kasumba', num: 23, pos: 'PF', height: 2.06,
+      first: 'Andre', last: 'Kasumba', num: 23, pos: 'PF', height: 2.06, model: 'models/kasumba.json', modelLo: 'models/kasumba-lo.json',
       skin: '#3a241a', hair: { style: 'buzz', color: '#0d0907' },
       r: { three: 62, mid: 74, finish: 88, dunk: 94, handle: 64, speed: 76, defense: 86, block: 84, steal: 62 },
     },
@@ -87,11 +87,19 @@ export const TEAMS = [
     primary: '#7A1F2B', secondary: '#F2E3C6', jersey: '#7C2233', letters: '#F2E3C6',
     logo: 'img/logo7.png', portrait: 'img/p7.jpg', model: 'models/arata.json',
     player: {
-      first: 'Kenji', last: 'Arata', num: 11, pos: 'SF', height: 2.01,
+      first: 'Kenji', last: 'Arata', num: 11, pos: 'SF', height: 2.01, model: 'models/arata.json', modelLo: 'models/arata-lo.json',
       skin: '#e0b28c', hair: { style: 'undercut', color: '#0f0c0b' },
       r: { three: 88, mid: 82, finish: 76, dunk: 70, handle: 76, speed: 78, defense: 82, block: 58, steal: 76 },
     },
   },
+];
+
+// 3v3: each Livewire kit fields its star plus two teammates. The teammates are
+// fictional players from the league list above, wearing the Livewire kits.
+// Until their own bodies are made they borrow their team star's model.
+export const ROSTERS = [
+  [TEAMS[0].player, TEAMS[3].player, TEAMS[5].player],   // yellow: Morrow, Lindqvist, Kasumba
+  [TEAMS[1].player, TEAMS[7].player, TEAMS[2].player],   // black: Varga, Arata, Aneke
 ];
 
 export function overall(p) {

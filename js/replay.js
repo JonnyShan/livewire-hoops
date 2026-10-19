@@ -124,6 +124,7 @@ export class Replay {
         c.u.uFlutter.value.set(L(o + 3), L(o + 4), L(o + 5), L(o + 6));
       }
       o += 7;
+      if (p.updateCull) p.updateCull();
     });
     const b = this.ball;
     b.mesh.position.set(L(o), L(o + 1), L(o + 2));
@@ -168,7 +169,7 @@ export class Replay {
     }
     const t0 = Math.max(this.times[this.idx(0)], tShot - 0.7);
     const t1 = Math.min(g.t, h.tMake + 1.2);
-    const shooter = this.players[h.shooter], defender = this.players[1 - h.shooter];
+    const shooter = this.players[h.shooter], defender = this.players[h.defender];
     // where the defender is at the basket: the cameras go on the other side so he doesn't block the shot
     this.apply(h.tMake);
     const D = this.bodyPos(defender);

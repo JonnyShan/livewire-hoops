@@ -4,12 +4,14 @@ import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
 import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
-import { TEAMS, DIFFICULTY } from './data.js';
-import { buildArena, RIM } from './arena.js';
+import { TEAMS, DIFFICULTY, ROSTERS } from './data.js';
+import { buildArena } from './arena.js';
+import { COURT, BASKETS } from './court.js';
 import { Player, loadModel } from './player.js';
 import { loadMotion, MOTION_URL } from './motion.js';
 import { Ball, Net } from './ball.js';
-import { Game } from './game.js';
+import { Game, TEAM_SIZE } from './game.js';
+import { Presenter } from './present.js';
 import { Sound } from './audio.js';
 import { Input } from './input.js';
 import { installGrade, makeGradePass, loadArenaLight } from './look.js';
@@ -26,20 +28,29 @@ const isTouch = matchMedia('(pointer: coarse)').matches || 'ontouchstart' in win
 const settings = { quality: 'auto', sound: true, vib: true };
 try { Object.assign(settings, JSON.parse(localStorage.getItem('hardwood.settings') || '{}')); } catch (e) { /* storage blocked */ }
 const save = () => { try { localStorage.setItem('hardwood.settings', JSON.stringify(settings)); } catch (e) { /* storage blocked */ } };
-// the two players (fixed for now: no picker)
+// the two kits: Livewire yellow (you) and Livewire black (the CPU), three a side
 const HOME = TEAMS[0], AWAY = TEAMS[1];
-const DIFF = DIFFICULTY.pro, GAME_TO = 11;
+const DIFF = DIFFICULTY.pro, MATE_DIFF = DIFFICULTY.pro;
 const qualityTier = () => settings.quality === 'auto' ? (isTouch ? 'med' : 'high') : settings.quality;
-const modelUrl = (team) => (qualityTier() === 'low' && team.modelLo ? team.modelLo : team.model);
+// six bodies on a phone: the lighter (31k-triangle) ones below High quality
+const lightBodies = () => qualityTier() !== 'high';
+// a player's body: his own model if he has one, else his team star's (scaled to his height)
+function bodyOf(team, info) {
+  const own = info.model ? info : team.player;
+  const src = info.model ? info : team;
+  const url = lightBodies() && src.modelLo ? src.modelLo : src.model;
+  return { url, scale: info.model ? 1 : info.height / own.height };
+}
+const modelUrls = () => [...new Set([HOME, AWAY].flatMap((t, k) => ROSTERS[k].map((info) => bodyOf(t, info).url)).filter(Boolean))];
 // the players are most of the download: start them the moment the page script runs
-for (const t of [HOME, AWAY]) if (t.model && settings.models !== false) loadModel(modelUrl(t)).catch(() => {});
+if (settings.models !== false) for (const u of modelUrls()) loadModel(u).catch(() => {});
 loadMotion(MOTION_URL).catch(() => {});
 
 // ---------- renderer ----------
-const canvas = $('gl');
+let canvas = $('gl');
 let renderer, composer, bloom;
 const scene = new THREE.Scene();
-const camera = new THREE.PerspectiveCamera(45, 1, 0.1, 120);
+const camera = new THREE.PerspectiveCamera(45, 1, 0.1, 140);
 camera.position.set(0, 4.5, 17);
 camera.layers.enable(1);
 const resolution = new THREE.Vector2(1, 1);
@@ -48,7 +59,16 @@ const basePixelRatio = (q = qualityTier()) => Math.min(window.devicePixelRatio |
 
 function makeRenderer() {
   const q = qualityTier();
-  if (renderer) renderer.dispose();
+  if (renderer) {
+    // a context keeps its attributes (antialias) for its canvas's life, and a disposed renderer
+    // leaves its GL objects behind in it: start on a fresh canvas and let the old context go
+    const old = renderer, c = canvas.cloneNode(false);
+    canvas.replaceWith(c);
+    canvas = c;
+    replay.canvas = c;
+    old.dispose();
+    old.forceContextLoss();
+  }
   renderer = new THREE.WebGLRenderer({ canvas, antialias: q !== 'low', powerPreference: 'high-performance', stencil: false });
   gov.scale = 1; gov.failed = 2; gov.trial = null; gov.holdUntil = 0;
   renderer.setPixelRatio(basePixelRatio(q));
@@ -95,37 +115,61 @@ function resize() {
   camera.aspect = w / h;
   camera.updateProjectionMatrix();
   resolution.set(w * renderer.getPixelRatio(), h * renderer.getPixelRatio());
-  if (net) net.mat.resolution.copy(resolution);
+  for (const n of nets) n.mat.resolution.copy(resolution);
+  if (endFree) measureEndFree();
 }
 window.addEventListener('resize', () => renderer && resize());
 
 // ---------- match objects ----------
-let arena = null, players = [], ball = null, net = null, game = null;
+let arena = null, players = [], ball = null, nets = [], game = null, presenter = null;
 const sound = new Sound();
 let input = null;
 const replay = new Replay({ camera, sound, canvas });
 
-async function buildMatch(home, away) {
+// free an object tree's GPU geometry, materials and textures (three uploads them again if they're reused)
+function disposeTree(o) {
+  o.traverse((n) => {
+    if (n.geometry) n.geometry.dispose();
+    for (const mt of [].concat(n.material || [])) {
+      for (const v of Object.values(mt)) if (v && v.isTexture) v.dispose();
+      if (mt.uniforms) for (const u of Object.values(mt.uniforms)) if (u && u.value && u.value.isTexture) u.value.dispose();
+      mt.dispose();
+    }
+  });
+}
+
+// builds run one at a time, so a later one's clear-up removes all of an earlier one
+let buildChain = Promise.resolve(), builtTier = null;
+function buildMatch(home, away) {
+  const run = buildChain.then(() => buildMatchNow(home, away));
+  buildChain = run.catch(() => {});
+  return run;
+}
+
+async function buildMatchNow(home, away) {
   // the players are most of the download: start them first, in parallel with the arena
-  for (const t of [home, away]) if (t.model && settings.models !== false) loadModel(modelUrl(t)).catch(() => {});
+  if (settings.models !== false) for (const u of modelUrls()) loadModel(u).catch(() => {});
   loadMotion(MOTION_URL).catch(() => {});
   // clear previous
-  if (arena) scene.remove(arena.group);
-  for (const p of players) scene.remove(p.group);
-  if (ball) { scene.remove(ball.mesh); scene.remove(ball.blob); }
-  if (net) scene.remove(net.lines);
+  if (arena) { scene.remove(arena.group); if (arena.reflector) arena.reflector.dispose(); disposeTree(arena.group); }
+  for (const p of players) { scene.remove(p.group); disposeTree(p.group); }
+  if (ball) { scene.remove(ball.mesh); scene.remove(ball.blob); disposeTree(ball.mesh); disposeTree(ball.blob); }
+  for (const n of nets) { scene.remove(n.lines); disposeTree(n.lines); }
+  builtTier = null;
   arena = await buildArena(scene, renderer, { home, away, quality: qualityTier() });
   applyLook();
-  // the away side switches to white only when kits clash and it has no photoreal model
-  const awayWhite = colorClash(home.jersey, away.jersey) && !(away.model && settings.models !== false);
-  players = [new Player(home), new Player(away, { away: awayWhite })];
+  players = [];
+  [home, away].forEach((team, k) => { for (let j = 0; j < TEAM_SIZE; j++) players.push(new Player(team, { info: ROSTERS[k][j] })); });
   for (const p of players) scene.add(p.group);
   // photoreal bodies where a model exists (falls back to the built-in body)
-  // Low quality keeps the lighter (31k-triangle) bodies for older phones
-  await Promise.all(players.map((p) => (p.team.model && !p.away && settings.models !== false
-    ? p.attachSkin(modelUrl(p.team)).catch((e) => console.warn('model failed, using built-in body', e)) : null)));
+  await Promise.all(players.map((p) => {
+    if (!p.team.model || settings.models === false) return null;
+    const b = bodyOf(p.team, p.info);
+    return p.attachSkin(b.url, { scale: b.scale }).catch((e) => console.warn('model failed, using built-in body', e));
+  }));
   ball = new Ball(scene);
-  net = new Net(scene, resolution);
+  nets = [new Net(scene, resolution, 0), new Net(scene, resolution, 1)];
+  builtTier = qualityTier();
   resize();
 }
 
@@ -137,33 +181,85 @@ function colorClash(a, b) {
 }
 
 // ---------- camera ----------
-const cam = { pos: new THREE.Vector3(0, 4.6, 17), look: new THREE.Vector3(0, 1.6, 5), shake: 0, mode: 'play', t: 0 };
+// Portrait, the court running up the screen: the camera rides behind the play
+// on the +z side, looking toward basket A (the one you attack), and follows the
+// ball along the court. When the CPU attacks basket B the play comes toward you.
+const cam = { pos: new THREE.Vector3(0, 9, 24), look: new THREE.Vector3(0, 0.8, 12), shake: 0, mode: 'play', t: 0 };
+const _cl = new THREE.Vector3();
+const _cf = new THREE.Vector3();
+// the victory dance: a long-lens shot of the winners at centre court, framed in
+// the part of the screen the final card leaves free (a view offset, so the card
+// never covers them)
+let endFree = null;
+const endOff = { x: 0, y: 0 };
+function measureEndFree() {
+  const W = window.innerWidth, H = window.innerHeight;
+  const r = document.querySelector('#modEnd .final').getBoundingClientRect();
+  endFree = r.left > W * 0.35 ? { x: 0, y: 0, w: r.left, h: H } : { x: 0, y: 0, w: W, h: Math.max(H * 0.22, r.top) };
+}
+function endCamera(dt, snap) {
+  const E = game.endStage, W = window.innerWidth, H = window.innerHeight;
+  const F = endFree || { x: 0, y: 0, w: W, h: H };
+  camera.fov = 30;
+  const t = Math.tan(THREE.MathUtils.degToRad(15));
+  // fit the line of three, arms up and swaying (about 4.2 m by 2.9 m), inside the free area with a margin
+  const fit = 0.88 * 2 * t;
+  const d = Math.min(18, Math.max(2.9 / ((F.h / H) * fit), 4.2 / ((F.w / W) * camera.aspect * fit)));
+  const k = snap ? 1 : 1 - Math.exp(-dt * 1.8);
+  cam.pos.lerp(_cf.set(E.x, 1.6, E.z + d), k);
+  cam.look.lerp(_cl.set(E.x, 1.2, E.z), k);
+  camera.position.copy(cam.pos);
+  // shift the picture so the dancers sit in the middle of the free area
+  endOff.x += (W / 2 - (F.x + F.w / 2) - endOff.x) * k;
+  endOff.y += (H / 2 - (F.y + F.h / 2) - endOff.y) * k;
+  camera.setViewOffset(W, H, endOff.x, endOff.y, W, H);
+  camera.lookAt(cam.look);
+  fadeHoopB(cam.pos.z);
+}
+// the card can grow after it opens (the Share button appears when the clip is ready)
+if (window.ResizeObserver) new ResizeObserver(() => { if (endFree) measureEndFree(); }).observe(document.querySelector('#modEnd .final'));
+function clearEndCamera() {
+  endFree = null; endOff.x = endOff.y = 0;
+  if (camera.view && camera.view.enabled) camera.clearViewOffset();
+}
+
 function updateCamera(dt, focus, snap = false) {
+  if (game && game.over && game.endStage && game.stateT > 1.1) { endCamera(dt, snap); return; }
+  if (camera.view && camera.view.enabled) clearEndCamera();
   const portrait = camera.aspect < 1;
-  const hFov = portrait ? 80 : 62;
+  const hFov = portrait ? 84 : 62;
   const vFov = THREE.MathUtils.radToDeg(2 * Math.atan(Math.tan(THREE.MathUtils.degToRad(hFov / 2)) / camera.aspect));
-  camera.fov = Math.min(portrait ? 62 : 46, Math.max(30, vFov));
+  camera.fov = Math.min(portrait ? 68 : 46, Math.max(30, vFov));
   camera.updateProjectionMatrix();
-  // frame both players and the ball, broadcast-style from behind the play
-  let fx = focus.x, fz = focus.z, zmax = focus.z;
+  // follow the ball, weighted a little toward the players near it
+  let fx = focus.x, fz = focus.z;
   if (game) {
-    const [a, b] = game.players;
-    const bw = game.ball.free ? 0.8 : 0.3;
-    fx = (a.pos.x + b.pos.x + game.ball.pos.x * bw * 2) / (2 + bw * 2);
-    fz = (a.pos.z + b.pos.z + game.ball.pos.z * bw * 2) / (2 + bw * 2);
-    zmax = Math.max(a.pos.z, b.pos.z);
+    const b = game.ball.pos;
+    let sx = 0, sz = 0, sw = 0;
+    for (const p of game.players) {
+      const w = 1 / (1 + p.pos.distanceTo(b) * 0.5);
+      sx += p.pos.x * w; sz += p.pos.z * w; sw += w;
+    }
+    const bw = game.ball.free ? 2.2 : 1.4;
+    fx = (sx + b.x * bw) / (sw + bw);
+    fz = (sz + b.z * bw) / (sw + bw);
+    // lead the play: look up the floor when you attack, give room toward you when they do
+    const t = game.poss;
+    if (t === 0) fz -= 1.2; else if (t === 1) fz += 1.6;
   }
-  fz = Math.min(fz, 11);
-  const back = portrait ? 10.5 : 7.4;
-  const cz = Math.max(fz + back, zmax + (portrait ? 6 : 4.3), 10.5);
-  const cy = (portrait ? 7.2 : 3.9) + (cz - fz) * 0.1;
-  const tgtPos = new THREE.Vector3(fx * 0.55, cy, cz);
-  const lookZ = THREE.MathUtils.lerp(fz - 1.3, RIM.z + 1.2, 0.3);
-  const tgtLook = new THREE.Vector3(fx * 0.75, portrait ? 0.9 : 1.75, portrait ? lookZ - 0.5 : lookZ);
-  const k = snap ? 1 : 1 - Math.exp(-dt * 3.0);
+  fz = THREE.MathUtils.clamp(fz, 2.5, COURT.len - 2);
+  const back = portrait ? 10.5 : 8.5;
+  // at basket B's end the camera stops just behind the baseline and rises to look down on the play
+  const cz = Math.min(fz + back, COURT.len + 2.4);
+  const cy = (portrait ? 9.2 : 5.2) + Math.max(0, fz + back - cz) * 0.55;
+  const tgtPos = _cf.set(fx * 0.72, cy, cz);
+  const lookZ = fz - (portrait ? 2.8 : 2.2);
+  const tgtLook = new THREE.Vector3(fx * 0.85, portrait ? 0.4 : 1.4, lookZ);
+  const k = snap ? 1 : 1 - Math.exp(-dt * 2.8);
   cam.pos.lerp(tgtPos, k);
   cam.look.lerp(tgtLook, k);
   camera.position.copy(cam.pos);
+  fadeHoopB(cam.pos.z);
   if (cam.shake > 0) {
     cam.shake = Math.max(0, cam.shake - dt * 2.5);
     const a = cam.shake * cam.shake * 0.08;
@@ -171,6 +267,39 @@ function updateCamera(dt, focus, snap = false) {
     camera.position.y += (Math.random() - 0.5) * a;
   }
   camera.lookAt(cam.look);
+}
+
+// Basket B's post, arm and shot clock stand between the camera and the play
+// when the CPU attacks toward you: they fade out while the camera is behind it.
+let hoopBParts = null, hoopBFade = -1;
+function fadeHoopB(camZ) {
+  if (!arena || !arena.hoops) return;
+  if (!hoopBParts || hoopBParts.arena !== arena) {
+    hoopBParts = { arena, mats: [] };
+    hoopBFade = -1;
+    const glassZ = COURT.len - COURT.boardZ;
+    const c = new THREE.Vector3();
+    arena.hoops[1].updateMatrixWorld(true);
+    arena.hoops[1].traverse((o) => {
+      if (!o.isMesh) return;
+      o.geometry.computeBoundingBox();
+      o.geometry.boundingBox.getCenter(c).applyMatrix4(o.matrixWorld);
+      if (c.z < glassZ + 0.025) return;                       // the glass, its frame, the rim: keep
+      const mats = [].concat(o.material).map((mt) => (mt.transparent ? mt : mt.clone()));
+      if (mats.some((mt) => mt.transparent && mt.opacity < 0.5)) return;
+      o.material = Array.isArray(o.material) ? mats : mats[0];
+      hoopBParts.mats.push(...mats);
+    });
+  }
+  const f = THREE.MathUtils.clamp((camZ - (COURT.len - 1.5)) / 2.5, 0, 1);
+  if (Math.abs(f - hoopBFade) < 0.01) return;
+  hoopBFade = f;
+  for (const mt of hoopBParts.mats) {
+    const tr = f > 0.01;
+    if (mt.transparent !== tr) { mt.transparent = tr; mt.needsUpdate = true; }
+    mt.opacity = 1 - 0.82 * f;
+    mt.depthWrite = f < 0.5;
+  }
 }
 
 // ---------- menus ----------
@@ -190,7 +319,7 @@ function seg(el, opts, get, set) {
 
 function renderSettings() {
   seg($('segQ'), [['auto', 'Auto'], ['high', 'High'], ['med', 'Medium'], ['low', 'Low']], () => settings.quality, (v) => { settings.quality = v; needsRebuild = true; });
-  seg($('segSnd'), [[true, 'On'], [false, 'Off']], () => settings.sound, (v) => { settings.sound = v; sound.setEnabled(v); });
+  seg($('segSnd'), [[true, 'On'], [false, 'Off']], () => settings.sound, (v) => { settings.sound = v; sound.setEnabled(v); showMute(); });
   seg($('segVib'), [[true, 'On'], [false, 'Off']], () => settings.vib, (v) => { settings.vib = v; });
 }
 let needsRebuild = false;
@@ -242,6 +371,21 @@ $('goPlay').onclick = async () => {
   startMatch();
 };
 $('pauseBtn').onclick = () => pause(true);
+// mute: the same switch as Sound in Settings
+function showMute() {
+  const b = $('muteBtn');
+  b.classList.toggle('off', !settings.sound);
+  b.setAttribute('aria-pressed', String(!settings.sound));
+  b.setAttribute('aria-label', settings.sound ? 'Mute' : 'Unmute');
+}
+$('muteBtn').onclick = () => {
+  settings.sound = !settings.sound;
+  save();
+  sound.unlock();
+  sound.setEnabled(settings.sound);
+  showMute();
+};
+showMute();
 $('resume').onclick = () => pause(false);
 $('pHow').onclick = () => { $('modHow').hidden = false; };
 $('pSettings').onclick = () => { renderSettings(); $('modSettings').hidden = false; };
@@ -251,52 +395,75 @@ $('toMenu').onclick = () => { $('modEnd').hidden = true; endToMenu(); };
 
 let paused = false;
 function pause(on) {
-  if (!game) return;
+  if (on && (!game || game.over)) return;
   paused = on;
   $('modPause').hidden = !on;
   sound.duck(on);
 }
 document.addEventListener('visibilitychange', () => { if (document.hidden && game && !game.over) pause(true); });
+// P pauses and resumes on a keyboard
+window.addEventListener('keydown', (e) => { if (e.key.toLowerCase() === 'p' && !e.repeat && game && !game.over && !replay.active) pause(!paused); });
 // phones play in portrait only: held sideways, the page covers the game (index.html) and it pauses
 const sideways = matchMedia('(pointer: coarse) and (orientation: landscape) and (max-height: 520px)');
 const onTurn = () => { if (sideways.matches && game && !game.over) pause(true); };
 if (sideways.addEventListener) sideways.addEventListener('change', onTurn); else sideways.addListener(onTurn);
 
+// a quality change mid-game rebuilds the scene; the game holds still until it's back
+let rebuilding = false;
+let rebuildTok = 0;
 async function rebuildRenderer() {
   makeRenderer();
-  if (game) {
-    const snap = game.snapshot();
+  if (!game || game.over) return;
+  const g = game, tok = ++rebuildTok;
+  rebuilding = true;
+  replay.skip(); replay.pending = null;
+  const snap = g.snapshot();
+  const old = g.players.map((p) => ({ pos: p.pos.clone(), vel: p.vel.clone(), yaw: p.yaw }));
+  try {
     await buildMatch(HOME, AWAY);
-    game.rebind({ arena, players, ball, net });
-    game.restore(snap);
-    replay.bind({ players, ball, net, game, renderer });
-  }
+    if (game !== g || tok !== rebuildTok) return;      // a newer rebuild (or a new game) takes over
+    // the new bodies stand where the old ones stood
+    players.forEach((p, i) => { p.pos.copy(old[i].pos); p.vel.copy(old[i].vel); p.yaw = old[i].yaw; });
+    g.rebind({ arena, players, ball, nets });
+    if (presenter) presenter.dispose();
+    presenter = makePresenter();
+    g.restore(snap);
+    replay.bind({ players, ball, net: nets[0], game: g, renderer });
+  } finally { if (tok === rebuildTok) rebuilding = false; }
 }
 
-async function startMatch() {
+function makePresenter() {
+  return new Presenter({ sound, arena, scene, camera, cam, vib: () => settings.vib, teams: [HOME, AWAY], ball });
+}
+
+async function startMatch(opts = {}) {
   const t0 = performance.now();
-  showLoader();
+  pause(false);
   show(null);
   const home = HOME, away = AWAY;
-  await buildMatch(home, away);
+  // the arena and players are reused game to game; they're only rebuilt for a new quality tier
+  await buildChain;
+  if (!arena || builtTier !== qualityTier()) { showLoader(); await buildMatch(home, away); }
   $('bugLogoL').src = home.logo; $('bugLogoR').src = away.logo;
   $('bugAbbrL').textContent = home.abbr; $('bugAbbrR').textContent = away.abbr;
   $('bugL').style.setProperty('--team', home.primary);
   $('bugR').style.setProperty('--team', away.primary);
-  $('gameTo').textContent = `TO ${GAME_TO}`;
   $('hud').hidden = false;
-  $('pad').hidden = false;
+  $('pad').hidden = !!opts.autoplay;
   hideLoader();
   if (game) game.dispose();
+  if (presenter) presenter.dispose();
+  presenter = makePresenter();
   if (!input) input = new Input();
   input.parkStick();
   game = new Game({
-    arena, players, ball, net, sound, input, cam, threeCamera: camera, scene,
-    diff: DIFF, to: GAME_TO, vib: () => settings.vib,
+    arena, players, ball, nets, input, threeCamera: camera, scene,
+    diff: DIFF, mateDiff: MATE_DIFF, autoplay: !!opts.autoplay, seed: opts.seed,
+    fx: (type, d, g) => { if (presenter) presenter.handle(type, d, g); },
     onEnd: showEnd,
   });
   // highlights: your threes and dunks get a slow-motion replay and a shareable clip
-  replay.bind({ players, ball, net, game, renderer });
+  replay.bind({ players, ball, net: nets[0], game, renderer });
   game.onHighlight = (h) => replay.highlight({ ...h, names: [HOME.abbr, AWAY.abbr] });
   replay.onClip = showClipChip;
   $('clipChip').hidden = true;
@@ -306,10 +473,13 @@ async function startMatch() {
 }
 
 function endToMenu() {
+  pause(false);
   replay.skip(); replay.pending = null; endQueued = null;
   $('clipChip').hidden = true;
+  clearEndCamera();
   if (game) game.dispose();
   game = null;
+  if (presenter) { presenter.dispose(); presenter = null; }
   $('hud').hidden = true;
   $('pad').hidden = true;
   show('scrTitle');
@@ -319,34 +489,44 @@ function endToMenu() {
 
 function showEnd(res) {
   const you = HOME, opp = AWAY;
-  const winner = res.youWon ? you : opp;
-  $('endPh').style.backgroundImage = `url("${winner.portrait}")`;
-  $('endEyebrow').textContent = res.youWon ? 'Final · Victory' : 'Final · Defeat';
-  $('endRes').textContent = res.youWon ? 'You win' : `${opp.player.last} wins`;
+  $('endEyebrow').textContent = (res.youWon ? 'Final · Victory' : 'Final · Defeat') + (res.overtime ? ' · Sudden death' : '');
+  $('endRes').textContent = res.youWon ? 'You win' : `${opp.abbr[0] + opp.abbr.slice(1).toLowerCase()} wins`;
   $('endScore').textContent = `${you.abbr} ${res.score[0]} – ${res.score[1]} ${opp.abbr}`;
   const s = res.stats;
+  // the game's top scorer
+  let mvp = 0;
+  res.pstats.forEach((p, i) => { if (p.pts > res.pstats[mvp].pts || (p.pts === res.pstats[mvp].pts && p.ast > res.pstats[mvp].ast)) mvp = i; });
   const row = (k, a, b) => `<span>${k}</span><span>${a}</span><span>${b}</span>`;
   $('endStats').innerHTML = `<span class="h"></span><span class="h">${you.abbr}</span><span class="h">${opp.abbr}</span>` +
     row('Field goals', `${s[0].fgm}/${s[0].fga}`, `${s[1].fgm}/${s[1].fga}`) +
     row('Threes', `${s[0].tpm}/${s[0].tpa}`, `${s[1].tpm}/${s[1].tpa}`) +
     row('Dunks', s[0].dunks, s[1].dunks) +
+    row('Assists', s[0].ast, s[1].ast) +
     row('Blocks', s[0].blk, s[1].blk) +
     row('Steals', s[0].stl, s[1].stl) +
-    row('Perfect releases', s[0].green, s[1].green);
+    row('Top scorer', mvp < TEAM_SIZE ? `${players[mvp].info.last} ${res.pstats[mvp].pts}` : '', mvp >= TEAM_SIZE ? `${players[mvp].info.last} ${res.pstats[mvp].pts}` : '');
   $('endShare').hidden = !replay.clip;
-  const open = () => { $('modEnd').hidden = false; $('pad').hidden = true; $('clipChip').hidden = true; };
+  const g = game;
+  const open = () => {
+    if (game !== g) return;
+    $('modEnd').hidden = false; $('pad').hidden = true; $('clipChip').hidden = true; $('hud').hidden = true;
+    measureEndFree();
+  };
   // a game-winning three or dunk gets its replay before the final card
-  if (replay.pending || replay.active) endQueued = open; else setTimeout(open, 1800);
+  if (replay.pending || replay.active) endQueued = open; else setTimeout(open, 2200);
 }
 
 // ---------- replays ----------
 let endQueued = null, chipT = 0;
 function startReplay() {
+  clearEndCamera();
   $('hud').hidden = true; $('pad').hidden = true; $('clipChip').hidden = true;
+  if (presenter) presenter.setHidden(true);
   replay.onDone = () => {
+    if (presenter) presenter.setHidden(false);
     if (!game) return;
     $('hud').hidden = false;
-    if (!game.over) $('pad').hidden = false;
+    if (!game.over && !game.autoplay) $('pad').hidden = false;
     if (input) input.parkStick();
     if (endQueued) { const f = endQueued; endQueued = null; setTimeout(f, 500); }
   };
@@ -429,19 +609,25 @@ function tick(dt) {
     if (!replay.active && game) updateCamera(0, game.focus(), true);
     return;
   }
-  if (game && !paused) {
+  if (game && !paused && !rebuilding) {
     const sdt = dt * game.timeScale;
     game.update(sdt, dt);
+    if (presenter) presenter.frame(dt, game);
     replay.record();
     if (replay.tickPending(dt)) startReplay();
     updateCamera(dt, game.focus());
+    if (arena && arena.follow) arena.follow(cam.look.x, cam.look.z);
     const ov = window.__hw && window.__hw.camOverride;
     if (ov) { camera.position.set(...ov.pos); camera.lookAt(...ov.look); }
   } else if (!game) {
-    // menu backdrop: slow orbit around the hoop
+    // menu backdrop: a slow pass along the court toward basket A
     cam.t += dt * 0.06;
-    camera.position.set(Math.sin(cam.t) * 9, 4.2, 6 + Math.cos(cam.t) * 9);
-    camera.lookAt(0, 2.2, 2.5);
+    const c = COURT.halfLen;
+    camera.position.set(Math.sin(cam.t) * 6.5, 4.6, c + Math.cos(cam.t) * 3 - 3);
+    camera.lookAt(0, 2.4, BASKETS[0].rim.z + 1);
+    if (arena && arena.follow) arena.follow(0, c / 2);
+    // under the title or loading screen nobody sees it: draw now and then (keeps it warm), not every frame
+    if ((!$('scrTitle').hidden || !$('loading').hidden) && (cam.skip = ((cam.skip || 0) + 1) % 20) !== 0) return;
   }
   if (composer) composer.render(); else renderer.render(scene, camera);
 }
@@ -467,13 +653,13 @@ async function boot() {
   // on a fast (cached) load, keep the ball up long enough to see it turn rather than flash
   const shown = performance.now();
   if (shown < 900) await new Promise((r) => setTimeout(r, 900 - shown));
-  if (mode === 'play') await startMatch(); else hideLoader();
+  if (mode === 'play' || mode === 'autoplay') await startMatch({ autoplay: mode === 'autoplay' }); else hideLoader();
   $('goPlay').dataset.ready = '1';
 }
 boot();
 
 // debug hooks for automated checks
-window.__hw = { get game() { return game; }, get renderer() { return renderer; }, get arena() { return arena; }, replay, camera, scene, settings, step: (dt) => tick(dt), manual: false, start: () => startMatch() };
+window.__hw = { get game() { return game; }, get renderer() { return renderer; }, get arena() { return arena; }, replay, camera, scene, settings, step: (dt) => tick(dt), manual: false, start: (o) => startMatch(o), get presenter() { return presenter; } };
 
 // ?debug: the performance panel for testing on real phones (debug.js)
 let dbg = null;
@@ -482,8 +668,8 @@ if (/[?&#]debug\b/.test(location.search + location.hash)) {
     dbg = m.startDebug({
       get renderer() { return renderer; }, get game() { return game; }, get paused() { return paused; }, get arena() { return arena; },
       get replayActive() { return replay.active; }, get scale() { return gov.scale; }, get tier() { return qualityTier(); },
-      settings, canvas, timing, ldBall, sound, replay, scene,
-      start: () => startMatch(),
+      settings, get canvas() { return canvas; }, timing, ldBall, sound, replay, scene,
+      start: (o) => startMatch(o),
       lockScale(on) { gov.lock = on; gov.t = gov.n = 0; gov.trial = null; },
       setScale: setGovScale,
     });

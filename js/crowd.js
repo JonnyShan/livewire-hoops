@@ -1,35 +1,45 @@
-// The crowd: a tiered bowl of seats wrapped around the half court, filled with
+// The crowd: a tiered bowl of seats wrapped around the full court, filled with
 // photographed fans (img/fans.webp, one seated and one cheering frame each).
 // Every fan is one instanced card; the vertex shader stands them up, bounces
-// them and sways them, so ~2,500 fans cost a single draw call.
+// them and sways them, so ~4,000 fans cost a single draw call.
 import * as THREE from 'three';
+import { COURT } from './court.js';
 
 // atlas layout (see raw/hardwood/gfx/fans_atlas.py)
 const ATLAS = { url: 'img/fans.webp', cols: 10, rows: 8, cardW: 1.2352, cardH: 1.55, headY: 0.3875, fans: 40, standers: 16 };
 const SEAT_HEAD = 1.22, STAND_HEAD = 1.68;   // head-top height above the row's floor (m)
 
-// seating bowl: a rounded rectangle around the half court; row i sits i*DEPTH
-// further out and i*RISE higher
-export const BOWL = { xs: 10.4, zb: -5.4, rc: 3.2, zEnd: 22, rows: 16, depth: 0.82, rise: 0.44, y0: 0.42, seat: 0.58 };
+// seating bowl: a rounded rectangle round the full court; row i sits i*DEPTH
+// further out and i*RISE higher. xs: sideline seats; zA / zB: the front rows
+// behind baseline A (the backdrop) and baseline B. The camera rides up to ~32 m
+// along z at 8-10 m high, so the B end starts beyond z = 35, behind it.
+export const BOWL = { xs: 10.4, zA: -5.4, zB: COURT.len + 6.9, rc: 3.2, rows: 16, depth: 0.82, rise: 0.44, y0: 0.42, seat: 0.58 };
+// aisles down the sidelines (z), symmetric about the centre line
+const SIDE_AISLES = [1.8, 8.1, COURT.halfLen, COURT.len - 8.1, COURT.len - 1.8];
 
-// point + inward normal at arc length s along row offset `off`
-function pathPoints(off, step) {
+// points + inward normals round row offset `off`, every `step` metres (`ss` on
+// the straights): left sideline toward A, corner, baseline A, corner, right
+// sideline toward B, corner, baseline B, corner.
+function pathPoints(off, step, close = false, ss = step) {
   const B = BOWL, out = [];
-  const X = B.xs - B.rc, Zc = B.zb + B.rc, R = B.rc + off;
+  const X = B.xs - B.rc, ZA = B.zA + B.rc, ZB = B.zB - B.rc, R = B.rc + off;
   const push = (x, z, nx, nz, seg) => out.push({ x, z, nx, nz, seg });
-  // left sideline (from behind the camera toward the baseline), corner, baseline, corner, right sideline
-  for (let z = B.zEnd; z > Zc; z -= step) push(-(B.xs + off), z, 1, 0, 'side');
-  for (let a = 0; a < Math.PI / 2; a += step / R) push(-X - Math.cos(a) * R, Zc - Math.sin(a) * R, Math.cos(a), Math.sin(a), 'corner');
-  for (let x = -X; x < X; x += step) push(x, B.zb - off, 0, 1, 'base');
-  for (let a = Math.PI / 2; a > 0; a -= step / R) push(X + Math.cos(a) * R, Zc - Math.sin(a) * R, -Math.cos(a), Math.sin(a), 'corner');
-  for (let z = Zc; z <= B.zEnd; z += step) push(B.xs + off, z, -1, 0, 'side');
+  for (let z = ZB; z > ZA; z -= ss) push(-(B.xs + off), z, 1, 0, 'side');
+  for (let a = 0; a < Math.PI / 2; a += step / R) push(-X - Math.cos(a) * R, ZA - Math.sin(a) * R, Math.cos(a), Math.sin(a), 'corner');
+  for (let x = -X; x < X; x += ss) push(x, B.zA - off, 0, 1, 'base');
+  for (let a = Math.PI / 2; a > 0; a -= step / R) push(X + Math.cos(a) * R, ZA - Math.sin(a) * R, -Math.cos(a), Math.sin(a), 'corner');
+  for (let z = ZA; z < ZB; z += ss) push(B.xs + off, z, -1, 0, 'side');
+  for (let a = 0; a < Math.PI / 2; a += step / R) push(X + Math.cos(a) * R, ZB + Math.sin(a) * R, -Math.cos(a), -Math.sin(a), 'corner');
+  for (let x = X; x > -X; x -= ss) push(x, B.zB + off, 0, -1, 'base');
+  for (let a = Math.PI / 2; a > 0; a -= step / R) push(-X - Math.cos(a) * R, ZB + Math.sin(a) * R, Math.cos(a), -Math.sin(a), 'corner');
+  if (close) out.push({ ...out[0] });
   return out;
 }
 
 // aisles: radial stairways that stay put from row to row
 function inAisle(p) {
   if (p.seg === 'base') return Math.abs(Math.abs(p.x) - 4.6) < 0.45;
-  if (p.seg === 'side') return [3.2, 11.4, 19.6].some((z) => Math.abs(p.z - z) < 0.45);
+  if (p.seg === 'side') return SIDE_AISLES.some((z) => Math.abs(p.z - z) < 0.45);
   return Math.abs(Math.abs(Math.atan2(p.nz, Math.abs(p.nx))) - Math.PI / 4) < 0.05;
 }
 
@@ -102,20 +112,18 @@ export function buildCrowd(group, { quality = 'med', ledTex = null } = {}) {
   const B = BOWL;
   const rand = rng(1234);
 
-  // ---- the bowl: risers and treads ----
+  // ---- the bowl: risers and treads (flat, so long quads on the straights) ----
   const pos = [], idx = [];
   const quad = (a, b, c, d) => { const n = pos.length / 3; pos.push(...a, ...b, ...c, ...d); idx.push(n, n + 1, n + 2, n, n + 2, n + 3); };
   for (let i = 0; i <= B.rows; i++) {
     const off = i * B.depth, y = B.y0 + i * B.rise, yPrev = i ? y - B.rise : 0;
-    const P = pathPoints(off, 0.8), Q = pathPoints(off + B.depth, 0.8);
+    const P = pathPoints(off, 0.8, true, 4);
     for (let k = 0; k < P.length - 1; k++) {
       const a = P[k], b = P[k + 1];
-      if (Math.hypot(b.x - a.x, b.z - a.z) > 2) continue;
       quad([a.x, yPrev, a.z], [b.x, yPrev, b.z], [b.x, y, b.z], [a.x, y, a.z]);               // riser
       const a2 = { x: a.x - a.nx * B.depth, z: a.z - a.nz * B.depth }, b2 = { x: b.x - b.nx * B.depth, z: b.z - b.nz * B.depth };
       if (i < B.rows) quad([a.x, y, a.z], [a2.x, y, a2.z], [b2.x, y, b2.z], [b.x, y, b.z]);  // tread
     }
-    void Q;
   }
   const bowlGeo = new THREE.BufferGeometry();
   bowlGeo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
@@ -125,14 +133,18 @@ export function buildCrowd(group, { quality = 'med', ledTex = null } = {}) {
   group.add(bowl);
 
   // front wall at courtside and the LED fascia running round the top of the bowl
+  // (closed loops; u counts 16 m texture repeats, rounded so the loop's seam matches)
   const strip = (off, y0, h, mat, lean = 0) => {
-    const P = pathPoints(off, 0.5), p = [], uv = [], ix = [];
+    const P = pathPoints(off, 0.5, true, 2), p = [], uv = [], ix = [];
+    let len = 0;
+    for (let k = 1; k < P.length; k++) len += Math.hypot(P[k].x - P[k - 1].x, P[k].z - P[k - 1].z);
+    const us = Math.max(1, Math.round(len / 16)) / len;
     let s = 0;
     for (let k = 0; k < P.length; k++) {
       const a = P[k];
       if (k) s += Math.hypot(a.x - P[k - 1].x, a.z - P[k - 1].z);
       p.push(a.x, y0, a.z, a.x - a.nx * lean, y0 + h, a.z - a.nz * lean);
-      uv.push(s / 16, 0, s / 16, 1);
+      uv.push(s * us, 0, s * us, 1);
       if (k) { const n = k * 2; ix.push(n - 2, n, n + 1, n - 2, n + 1, n - 1); }
     }
     const g = new THREE.BufferGeometry();
@@ -156,12 +168,16 @@ export function buildCrowd(group, { quality = 'med', ledTex = null } = {}) {
   }
 
   // ---- fans ----
+  // low quality spaces them out, and fills only every other seat at the B end
+  // (behind the in-game camera)
+  const low = quality === 'low';
   const seats = [];
   for (let i = 0; i < B.rows; i++) {
     const off = i * B.depth + 0.34, y = B.y0 + i * B.rise;
-    const P = pathPoints(off, B.seat);
-    for (const p of P) {
-      if (inAisle(p)) continue;
+    const P = pathPoints(off, low ? 0.66 : B.seat);
+    for (let k = 0; k < P.length; k++) {
+      const p = P[k];
+      if (inAisle(p) || (low && p.z > COURT.len + 1 && (k + i) % 2)) continue;
       if (rand() < 0.035) continue;                         // the odd empty seat
       const j = (rand() - 0.5) * 0.08;
       seats.push({ x: p.x - p.nz * j, y, z: p.z + p.nx * j, yaw: Math.atan2(p.nx, p.nz), row: i });
@@ -181,7 +197,8 @@ export function buildCrowd(group, { quality = 'med', ledTex = null } = {}) {
     iFan[k] = Math.floor(rand() * ATLAS.fans);
     iRnd.set([rand(), rand(), rand(), rand()], k * 4);
     // the court lights spill onto the front rows; the upper rows fall into shadow
-    const dCourt = Math.hypot(s.x * 0.8, s.z - 5);
+    // (distance from the lit floor: the court's long axis, 5 m in from each baseline)
+    const dCourt = Math.hypot(s.x * 0.8, Math.max(0, Math.abs(s.z - COURT.halfLen) - (COURT.halfLen - 5)));
     iShade[k] = (0.92 - 0.55 * (s.row / B.rows)) * (1.1 - Math.min(0.35, Math.max(0, dCourt - 11) * 0.02)) * (0.82 + rand() * 0.3);
   });
   geo.setAttribute('iPos', new THREE.InstancedBufferAttribute(iPos, 3));
@@ -206,7 +223,7 @@ export function buildCrowd(group, { quality = 'med', ledTex = null } = {}) {
   group.add(fans);
 
   // camera flashes in the crowd
-  const flashN = quality === 'low' ? 40 : 110;
+  const flashN = quality === 'low' ? 50 : 160;
   const flashPos = new Float32Array(flashN * 3), flashCol = new Float32Array(flashN * 3);
   for (let i = 0; i < flashN; i++) {
     const s = seats[Math.floor(rand() * n)];

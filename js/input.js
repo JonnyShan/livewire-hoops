@@ -1,14 +1,17 @@
-// Touch (floating joystick + two buttons) and keyboard input.
+// Touch (floating joystick + three buttons) and keyboard input.
+// a: shoot / block / jump   b: pass / switch   c: dribble move / steal
 export class Input {
   constructor() {
     this.stick = { x: 0, y: 0, mag: 0 };
     this.sprintKey = false;
-    this.btn = { a: mk(), b: mk() };
+    this.btn = { a: mk(), b: mk(), c: mk() };
     this.pad = document.getElementById('pad');
     this.stickEl = document.getElementById('stick');
     this.nubEl = document.getElementById('nub');
     this.aEl = document.getElementById('btnA');
     this.bEl = document.getElementById('btnB');
+    this.cEl = document.getElementById('btnC');
+    this.el = { a: this.aEl, b: this.bEl, c: this.cEl };
     this.touchId = null;
     this.origin = { x: 0, y: 0 };
     this.keys = new Set();
@@ -29,7 +32,7 @@ export class Input {
   bind() {
     const pad = this.pad;
     pad.addEventListener('pointerdown', (e) => {
-      if (e.target === this.aEl || e.target === this.bEl) return;
+      if (e.target === this.aEl || e.target === this.bEl || e.target === this.cEl) return;
       if (e.clientX > window.innerWidth * 0.55) return;
       if (this.touchId !== null) return;
       this.touchId = e.pointerId;
@@ -65,35 +68,38 @@ export class Input {
     };
     btn(this.aEl, 'a');
     btn(this.bEl, 'b');
+    btn(this.cEl, 'c');
 
     window.addEventListener('keydown', (e) => {
       if (e.repeat) return;
       const k = e.key.toLowerCase();
       this.keys.add(k);
       if (k === ' ' || k === 'j') { this.press('a'); e.preventDefault(); }
-      if (k === 'k') this.press('b');
+      if (k === 'l') this.press('b');
+      if (k === 'k') this.press('c');
     });
     window.addEventListener('keyup', (e) => {
       const k = e.key.toLowerCase();
       this.keys.delete(k);
       if (k === ' ' || k === 'j') this.release('a');
-      if (k === 'k') this.release('b');
+      if (k === 'l') this.release('b');
+      if (k === 'k') this.release('c');
     });
-    window.addEventListener('blur', () => { this.keys.clear(); this.release('a'); this.release('b'); });
+    window.addEventListener('blur', () => { this.keys.clear(); for (const k of ['a', 'b', 'c']) this.release(k); });
   }
 
   press(key) {
     const b = this.btn[key];
     if (b.down) return;
     b.down = true; b.pressed = true; b.t = 0;
-    (key === 'a' ? this.aEl : this.bEl).classList.add('down');
+    this.el[key].classList.add('down');
   }
 
   release(key) {
     const b = this.btn[key];
     if (!b.down) return;
     b.down = false; b.released = true;
-    (key === 'a' ? this.aEl : this.bEl).classList.remove('down');
+    this.el[key].classList.remove('down');
   }
 
   moveStick(e) {
@@ -132,11 +138,13 @@ export class Input {
     for (const b of Object.values(this.btn)) { b.pressed = false; b.released = false; }
   }
 
-  setLabels(a, b, bOff = false, aOff = false) {
-    if (this.aEl.textContent !== a) this.aEl.textContent = a;
-    if (this.bEl.textContent !== b) this.bEl.textContent = b;
-    this.bEl.classList.toggle('off', bOff);
-    this.aEl.classList.toggle('off', aOff);
+  // labels for a, b, c, and which are greyed out
+  setLabels(labels, off) {
+    for (let k = 0; k < 3; k++) {
+      const el = this.el['abc'[k]];
+      if (el.textContent !== labels[k]) el.textContent = labels[k];
+      el.classList.toggle('off', !!off[k]);
+    }
   }
 }
 
