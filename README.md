@@ -1,6 +1,6 @@
 # Livewire Hoops
 
-Live at **https://livewire.hoops.gamify.com**: the 3-on-3 full-court game. This repo is the hosted copy (GitHub Pages). The source lives in [JonnyShan/Multi-View-Screen](https://github.com/JonnyShan/Multi-View-Screen) under `hoops3v3/`; this copy is from commit `49122a4`.
+Live at **https://livewire.hoops.gamify.com**: the 3-on-3 full-court game. This repo is the hosted copy (GitHub Pages). The source lives in [JonnyShan/Multi-View-Screen](https://github.com/JonnyShan/Multi-View-Screen) under `hoops3v3/`; this copy is from commit `3944c2f`.
 
 - `/` (the repo root): Hoops 3v3.
 - `/3v3/` (`3v3/`): the same 3v3 build, so earlier preview links keep working.
@@ -52,7 +52,11 @@ The 1-on-1 half-court game it grew from stays playable at https://livewire.hoops
   - A body off screen isn't drawn.
 - **Motion**: running, walking, backpedalling, defensive slides, stances and jumps come from motion-capture clips, blended by speed and direction. A procedural rig handles dribbling, shooting, passing, catching, layups, dunks, steals and arm IK. A pass is arms only, so the legs keep running under it.
 - **Victory dance**: at the final buzzer the winners walk to centre court and dance (three different motion-capture dances) while the losers walk off. The final card sits at the bottom (on the right of a wide screen) and a long-lens camera frames the dancers in the space above it.
-- **Replays**: your threes and dunks get a slow-motion replay at basket A, recorded as a shareable clip (`js/replay.js`).
+- **Replays** (`js/replay.js`): your threes and dunks get a broadcast-style replay, cut from three angles with hard cuts. Each angle is mirrored to whichever side nobody stands in the way of.
+  - A dunk: a sideline camera runs with the drive, then the slam from low under the rim in super slow motion (white flash, camera flashes in the crowd, the roar), then the hang from the baseline corner.
+  - A three: a long lens on the release, then a high, wide shot behind the shooter that holds the shooter, the arc and the whole board while a Livewire-yellow tracer draws the flight (from a corner, where the stands are behind the shooter, a crane over the shooter's shoulder), then the swish from under the net in super slow motion.
+  - A name strip shows who scored and what it was (SLAM, MONSTER SLAM, FROM DEEP · 26 FT, GAME WINNER), with SUPER SLO-MO while it crawls.
+  - The replay is recorded as a shareable clip with the crowd audio: vertical (720×1280) on a phone, 16:9 on a computer.
 - **Branding**: Livewire (livewire.group) yellow `#CBFE00` and black, its wordmark and its mark, as in the 1v1.
 - **Audio** (`sfx/`): the recorded crowd, rim and ball sounds of the 1v1. Ball, rim and sneaker sounds are quieter at the far end of the floor.
 

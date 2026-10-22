@@ -224,7 +224,7 @@ function clearEndCamera() {
 }
 
 function updateCamera(dt, focus, snap = false) {
-  if (game && game.over && game.endStage && game.stateT > 1.1) { endCamera(dt, snap); return; }
+  if (game && game.over && game.endStage && game.stateT > 1.1 && !replay.pending) { endCamera(dt, snap); return; }
   if (camera.view && camera.view.enabled) clearEndCamera();
   const portrait = camera.aspect < 1;
   const hFov = portrait ? 84 : 62;
@@ -428,7 +428,7 @@ async function rebuildRenderer() {
     if (presenter) presenter.dispose();
     presenter = makePresenter();
     g.restore(snap);
-    replay.bind({ players, ball, net: nets[0], game: g, renderer });
+    replay.bind({ players, ball, net: nets[0], game: g, renderer, arena });
   } finally { if (tok === rebuildTok) rebuilding = false; }
 }
 
@@ -463,7 +463,7 @@ async function startMatch(opts = {}) {
     onEnd: showEnd,
   });
   // highlights: your threes and dunks get a slow-motion replay and a shareable clip
-  replay.bind({ players, ball, net: nets[0], game, renderer });
+  replay.bind({ players, ball, net: nets[0], game, renderer, arena });
   game.onHighlight = (h) => replay.highlight({ ...h, names: [HOME.abbr, AWAY.abbr] });
   replay.onClip = showClipChip;
   $('clipChip').hidden = true;
@@ -600,25 +600,33 @@ function setGovScale(s) {
 }
 
 function tick(dt) {
-  if (arena) arena.update(dt, camera);
   if (replay.active) {
-    // the play again, in slow motion (the crowd stays live)
+    // the play again, in slow motion (the crowd stays live); the camera moves first, then the crowd faces it and the light follows it
     if (paused || !game) replay.skip(); else replay.update(dt);
+    if (arena) arena.update(dt, camera);
+    if (replay.active && replay.play && arena && arena.follow) arena.follow(replay.play.look.x, replay.play.look.z);
     if (composer) composer.render(); else renderer.render(scene, camera);
     replay.capture();
     if (!replay.active && game) updateCamera(0, game.focus(), true);
     return;
   }
+  if (arena) arena.update(dt, camera);
   if (game && !paused && !rebuilding) {
     const sdt = dt * game.timeScale;
     game.update(sdt, dt);
     if (presenter) presenter.frame(dt, game);
     replay.record();
-    if (replay.tickPending(dt)) startReplay();
-    updateCamera(dt, game.focus());
-    if (arena && arena.follow) arena.follow(cam.look.x, cam.look.z);
-    const ov = window.__hw && window.__hw.camOverride;
-    if (ov) { camera.position.set(...ov.pos); camera.lookAt(...ov.look); }
+    if (replay.tickPending(dt)) {
+      startReplay();
+      // its first frame is drawn now: the crowd faces the replay camera and the light goes where it looks
+      if (replay.active && arena) { arena.update(0, camera); if (arena.follow && replay.play) arena.follow(replay.play.look.x, replay.play.look.z); }
+    }
+    if (!replay.active) {        // (a replay that just started has already placed its camera)
+      updateCamera(dt, game.focus());
+      if (arena && arena.follow) arena.follow(cam.look.x, cam.look.z);
+      const ov = window.__hw && window.__hw.camOverride;
+      if (ov) { camera.position.set(...ov.pos); camera.lookAt(...ov.look); }
+    }
   } else if (!game) {
     // menu backdrop: a slow pass along the court toward basket A
     cam.t += dt * 0.06;

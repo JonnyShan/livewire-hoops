@@ -1438,7 +1438,7 @@ export class Game {
     const side = this.rng() < 0.5 ? -1 : 1;
     this.pending = { team: other, spot: { x: side * 1.5, z: B.baseZ - 0.45 * B.dir }, after: 0.9 };
     // your threes and dunks get a replay (before the final card on a game winner)
-    if (team === 0 && (sh.pts === 3 || sh.type === 'dunk') && this.onHighlight) this.onHighlight({ type: sh.type === 'dunk' ? 'dunk' : 'three', shooter: i, defender: this.nearestOpp(i).j, tMake: this.t, winning });
+    if (team === 0 && (sh.pts === 3 || sh.type === 'dunk') && this.onHighlight) this.onHighlight({ type: sh.type === 'dunk' ? 'dunk' : 'three', shooter: i, defender: this.nearestOpp(i).j, tMake: this.t, winning, big: sh.big || 0 });
     if (winning) this.finish(team);
     else if (this.buzzer) this.endOfTime();
     else if (sh.type !== 'dunk' && !this.players[i].action) this.players[i].setAction('celebrate', { dur: 1.0 });
