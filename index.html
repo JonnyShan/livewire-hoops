@@ -5,7 +5,8 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
 <meta name="theme-color" content="#07090d">
 <meta name="apple-mobile-web-app-capable" content="yes">
-<title>Gamify Hoops</title>
+<title>Hoops</title>
+<script src="js/brand-boot.js"></script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Semi+Condensed:wght@500;600;700&family=Saira+Extra+Condensed:wght@600;700;800;900&display=swap">
@@ -94,8 +95,8 @@ button:focus-visible { outline: 2px solid var(--leather-hi); outline-offset: 3px
 .btns { position: absolute; right: calc(var(--sar) + 18px); bottom: calc(var(--sab) + 18px); width: 190px; height: 170px; pointer-events: none; }
 .btn { position: absolute; border-radius: 50%; display: grid; place-items: center; pointer-events: auto; touch-action: none;
   font: 800 15px/1 var(--display); letter-spacing: .12em; border: 2px solid rgba(255,255,255,.35); background: rgba(10,12,18,.55); backdrop-filter: blur(4px); -webkit-backdrop-filter: blur(4px); }
-.btn.big { width: 92px; height: 92px; right: 0; bottom: 0; background: rgba(31,130,208,.86); border-color: var(--leather-hi); color: var(--on-leather); font-size: 18px; }
-.btn.small { width: 66px; height: 66px; right: 104px; bottom: 26px; background: rgba(26,26,26,.82); border-color: rgba(31,130,208,.55); color: var(--leather); }
+.btn.big { width: 92px; height: 92px; right: 0; bottom: 0; background: rgba(var(--leather-rgb),.86); border-color: var(--leather-hi); color: var(--on-leather); font-size: 18px; }
+.btn.small { width: 66px; height: 66px; right: 104px; bottom: 26px; background: rgba(26,26,26,.82); border-color: rgba(var(--leather-rgb),.55); color: var(--leather); }
 .btn.tiny { width: 58px; height: 58px; right: 44px; bottom: 104px; }
 .btn.down { transform: scale(.92); filter: brightness(1.25); }
 .btn.off { opacity: .35; }
@@ -106,19 +107,19 @@ button:focus-visible { outline: 2px solid var(--leather-hi); outline-offset: 3px
 .dunkring .prog { stroke: var(--leather); stroke-width: 5; stroke-linecap: round; stroke-dasharray: 100; stroke-dashoffset: 100; opacity: .85; }
 .dunkring .prog.empty { visibility: hidden; }
 /* the glow goes on the svg itself: Safari ignores CSS filters on shapes inside an svg */
-.dunkring.full { filter: drop-shadow(0 0 5px #1F82D0); animation: dunkpulse 1s ease-in-out infinite; }
+.dunkring.full { filter: drop-shadow(0 0 5px var(--leather)); animation: dunkpulse 1s ease-in-out infinite; }
 .dunkring.full .prog { stroke-width: 6; opacity: 1; }
 .dunkbadge { position: absolute; right: 2px; bottom: 84px; width: 56px; height: 20px; border-radius: 10px; display: grid; place-items: center; pointer-events: none;
-  font: 800 11px/1 var(--display); letter-spacing: .14em; text-indent: .14em; color: #1F82D0; background: #1A1A1A; border: 1.5px solid #1F82D0; opacity: 0; transform: scale(.4); transition: opacity .15s, transform .25s cubic-bezier(.3,1.8,.5,1); }
+  font: 800 11px/1 var(--display); letter-spacing: .14em; text-indent: .14em; color: var(--leather); background: #1A1A1A; border: 1.5px solid var(--leather); opacity: 0; transform: scale(.4); transition: opacity .15s, transform .25s cubic-bezier(.3,1.8,.5,1); }
 .dunkring.full + .dunkbadge { opacity: 1; transform: scale(1); }
-@keyframes dunkpulse { 50% { filter: drop-shadow(0 0 11px #1F82D0); } }
+@keyframes dunkpulse { 50% { filter: drop-shadow(0 0 11px var(--leather)); } }
 
 /* ---------- menus ---------- */
 .screen { position: fixed; inset: 0; z-index: 8; display: flex; background: var(--ink); overflow: hidden; }
 /* the cover: a dunk from behind (no face). Portrait fills the screen with the
    title along the bottom; wider screens put the photo at the right at full
    height, its dark left side fading into the page under the title */
-.title .art { position: absolute; inset: 0; background: url("img/cover.webp") 72% top / cover no-repeat; }
+.title .art { position: absolute; inset: 0; background: var(--cover) 72% top / cover no-repeat; }
 .title .art::after { content: ""; position: absolute; inset: 0; background: linear-gradient(0deg, rgba(7,9,13,.96) 0%, rgba(7,9,13,.7) 30%, rgba(7,9,13,0) 52%); }
 @media (orientation: landscape) {
   .title .art { left: auto; height: 100%; aspect-ratio: 1195 / 1316; max-width: 100%; background-position: right top;
@@ -137,10 +138,15 @@ button:focus-visible { outline: 2px solid var(--leather-hi); outline-offset: 3px
 /* the brand logo (img/gamify-logo-white.svg: seven-dot mark in its own colours, white wordmark); js/lwmark.js pops it in */
 .lw { position: relative; display: block; }
 .lw > img { display: block; width: 100%; height: auto; }
+/* logoStyle "grid": the wordmark path with a 4x4 mark at the top right of the E (js/lwmark.js runs the squares) */
+.lw > svg { display: block; width: 90%; height: auto; margin-top: 10%; }
+.lwm { position: absolute; right: 0; top: 1px; width: calc(10% - 2px); aspect-ratio: 1; transform: skewX(-10deg); display: grid; grid-template-columns: repeat(4, 1fr); }
+.lwm i { opacity: 0; background: currentColor; box-shadow: 0 0 0 .5px currentColor; }
+.lwm i.on { opacity: 1; }
 .row { display: flex; gap: 10px; flex-wrap: wrap; }
 .cta { font: 800 20px/1 var(--display); letter-spacing: .14em; padding: 15px 30px 14px; background: var(--leather); color: var(--on-leather); text-transform: uppercase; clip-path: polygon(8px 0, 100% 0, calc(100% - 8px) 100%, 0 100%); }
 .cta:active { background: var(--leather-hi); }
-.cta.loading { background: linear-gradient(90deg, var(--leather) var(--p, 0%), rgba(31,130,208,.32) var(--p, 0%)); min-width: 11.5em; }
+.cta.loading { background: linear-gradient(90deg, var(--leather) var(--p, 0%), rgba(var(--leather-rgb),.32) var(--p, 0%)); min-width: 11.5em; }
 .ghost { font: 700 16px/1 var(--display); letter-spacing: .14em; padding: 14px 20px 13px; border: 1px solid var(--line); text-transform: uppercase; color: var(--chalk); background: rgba(255,255,255,.04); }
 
 .seg { display: inline-flex; border: 1px solid var(--line); }
@@ -205,10 +211,13 @@ button:focus-visible { outline: 2px solid var(--leather-hi); outline-offset: 3px
 .loader { position: fixed; inset: 0; z-index: 12; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 28px; background: var(--ink); transition: opacity .45s ease; }
 .loader.out { opacity: 0; pointer-events: none; }
 .loader .ball { position: relative; width: min(36vmin, 180px); aspect-ratio: 1; border-radius: 50%; overflow: hidden;
-  background: #000 url("img/ball.webp") center / cover no-repeat;
+  background: #000 var(--ball) center / cover no-repeat;
   box-shadow: 0 22px 36px -16px rgba(0,0,0,.9), 0 0 80px rgba(214,110,40,.14); }
 .loader .ball { animation: ldspin 6s linear infinite; }
 .loader .ball video { display: none; }
+/* a brand with a filmed ball (ballVideo) plays it instead of turning the still */
+.loader.video .ball { animation: none; }
+.loader.video .ball video { display: block; width: 100%; height: 100%; object-fit: cover; transform: scale(1.02); }
 @keyframes ldspin { to { transform: rotate(360deg); } }
 .loader .ldbar { width: min(36vmin, 170px); height: 3px; background: rgba(255,255,255,.12); overflow: hidden; }
 .loader .ldbar i { display: block; height: 100%; background: var(--leather); transform-origin: 0 50%; transform: scaleX(0); transition: transform .3s ease-out; }
@@ -256,7 +265,7 @@ button:focus-visible { outline: 2px solid var(--leather-hi); outline-offset: 3px
 <div class="turn" role="alert">
   <svg viewBox="0 0 48 48" aria-hidden="true"><rect x="15" y="5" width="18" height="38" rx="3.5" fill="none" stroke="currentColor" stroke-width="2.5"/><path d="M21 38h6" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"/></svg>
   <p>Turn your phone upright</p>
-  <small>Gamify Hoops plays in portrait</small>
+  <small><span class="bname">Gamify</span> Hoops plays in portrait</small>
 </div>
 
 <div id="hud" hidden>
@@ -288,7 +297,7 @@ button:focus-visible { outline: 2px solid var(--leather-hi); outline-offset: 3px
 <section class="screen title" id="scrTitle" hidden>
   <div class="art"></div>
   <div class="col">
-    <div class="lw presenter" role="img" aria-label="Gamify"><img src="img/gamify-logo-white.svg" alt=""></div>
+    <div class="lw presenter" role="img" aria-label=""></div>
     <h1 class="wordmark">Hoo<span>ps</span></h1>
     <div class="row"><button class="cta" id="goPlay">Start</button></div>
   </div>
@@ -298,7 +307,7 @@ button:focus-visible { outline: 2px solid var(--leather-hi); outline-offset: 3px
   <div class="sheet">
     <h3>How to play</h3>
     <ul>
-      <li><b>Teams:</b> three on three, full court. You're Gamify blue, attacking up the screen. You always play the man with the ball; on defence you play the man nearest it (the blue ring).</li>
+      <li><b>Teams:</b> three on three, full court. You're <span class="bname">Gamify</span> <span class="kitword">blue</span>, attacking up the screen. You always play the man with the ball; on defence you play the man nearest it (the ring in your colour).</li>
       <li><b>Move:</b> drag anywhere on the left half of the screen. Push to the edge to sprint.</li>
       <li><b>Shoot:</b> hold SHOOT to rise up, let go at the top of your jump. The green band on the meter is a perfect release. Near the rim while driving, SHOOT becomes a layup.</li>
       <li><b>Dunk:</b> the ring around SHOOT fills over 15 seconds of play. When it reads DUNK, run at the rim and press SHOOT from about the free-throw line in: he goes up high and throws it down. A dunk empties the ring.</li>
@@ -359,7 +368,7 @@ button:focus-visible { outline: 2px solid var(--leather-hi); outline-offset: 3px
 <div class="loader" id="loading" role="status" aria-label="Loading">
   <div class="ball"><video id="ldBall" muted playsinline preload="none" aria-hidden="true"></video></div>
   <div class="ldbar"><i id="loadBar"></i></div>
-  <div class="lw ldmark" role="img" aria-label="Gamify"><img src="img/gamify-logo-white.svg" alt=""></div>
+  <div class="lw ldmark" role="img" aria-label=""></div>
 </div>
 
 <script type="importmap">

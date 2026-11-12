@@ -8,7 +8,7 @@
 // audio) is recorded for sharing.
 import * as THREE from 'three';
 import { RIM, COURT } from './arena.js';
-import { BRAND } from './data.js';
+import { BRAND, drawBrandWordmark, brandWordmarkWidth } from './data.js';
 
 const KEEP = 7;          // seconds of play kept
 const MAXF = 720;        // frame slots (KEEP s at up to ~100 fps)
@@ -750,12 +750,11 @@ export class Replay {
     // broadcast dressing: letterbox, brand mark, replay tag, score, address
     g.fillStyle = '#000';
     g.fillRect(0, 0, W, 54); g.fillRect(0, H - 54, W, 54);
-    if (!this._wm) this._wm = new Path2D(BRAND.wordmark.d);
-    g.save(); g.translate(28, 16); g.scale(22 / BRAND.wordmark.h, 22 / BRAND.wordmark.h); g.fillStyle = BRAND.accent; g.fill(this._wm); g.restore();
+    drawBrandWordmark(g, 28, 16, 22, BRAND.accent);
     g.font = '800 26px "Saira Extra Condensed", "Arial Narrow", sans-serif';
     g.textBaseline = 'middle';
     g.fillStyle = '#ffffff';
-    g.fillText('HOOPS', 28 + BRAND.wordmark.w * 22 / BRAND.wordmark.h + 12, 28);
+    g.fillText('HOOPS', 28 + brandWordmarkWidth(22) + 12, 28);
     const tag = r.h.type === 'dunk' ? 'REPLAY · SLAM' : 'REPLAY · FROM DEEP';
     g.font = '800 22px "Saira Extra Condensed", "Arial Narrow", sans-serif';
     const tw = g.measureText(tag).width;

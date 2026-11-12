@@ -7,7 +7,7 @@
 import * as THREE from 'three';
 import { Reflector } from 'three/addons/objects/Reflector.js';
 import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
-import { BRAND } from './data.js';
+import { BRAND, drawBrandWordmark, brandWordmarkWidth } from './data.js';
 import { buildCrowd } from './crowd.js';
 
 import { COURT, RIM, BASKETS, isThree } from './court.js';
@@ -80,17 +80,8 @@ const ReflectShader = {
 };
 
 // draw the brand wordmark centred at (cx, cy), h pixels tall
-let _wm = null;
 function drawWordmark(ctx, cx, cy, h, color) {
-  const W = BRAND.wordmark;
-  if (!_wm) _wm = new Path2D(W.d);
-  const sc = h / W.h;
-  ctx.save();
-  ctx.translate(cx - (W.w * sc) / 2, cy - h / 2);
-  ctx.scale(sc, sc);
-  ctx.fillStyle = color;
-  ctx.fill(_wm);
-  ctx.restore();
+  drawBrandWordmark(ctx, cx - brandWordmarkWidth(h) / 2, cy - h / 2, h, color);
 }
 
 // ---------- court markings canvas ----------
