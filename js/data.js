@@ -9,7 +9,7 @@ export const BRAND = {
   onAccent: '#FFFFFF',
   mark: 'img/gamify-mark.png', // the seven-dot mark, full colour (arena boards)
   logo: 'img/gamify-logo-white.svg',
-  url: 'play.gamify.com/basketball',
+  url: 'demos.gamify.com/basketball',
   share: 'Gamify Hoops',
   black: '#1A1A1A',
   // the GAMIFY wordmark, as an SVG path in a 682 x 140 box
