@@ -79,7 +79,7 @@ const ReflectShader = {
     }`,
 };
 
-// draw the Livewire wordmark centred at (cx, cy), h pixels tall
+// draw the brand wordmark centred at (cx, cy), h pixels tall
 let _wm = null;
 function drawWordmark(ctx, cx, cy, h, color) {
   const W = BRAND.wordmark;
@@ -150,7 +150,7 @@ function drawCourt(ctx, home, logoImg) {
   // apron wordmarks: two on each baseline, one on each sideline per half (all read from the court)
   bothEnds(() => {
     if (home.brand) {
-      for (const x of [-4.4, 4.4]) drawWordmark(ctx, X(x), Z(-1.25), 0.85 * k, BRAND.yellow);
+      for (const x of [-4.4, 4.4]) drawWordmark(ctx, X(x), Z(-1.25), 0.85 * k, BRAND.accent);
     } else {
       ctx.save();
       ctx.fillStyle = 'rgba(255,255,255,0.92)';
@@ -165,7 +165,7 @@ function drawCourt(ctx, home, logoImg) {
       ctx.save();
       ctx.translate(X(side * 8.3), Z(7));
       ctx.rotate(side * Math.PI / 2);
-      drawWordmark(ctx, 0, 0, 0.5 * k, 'rgba(203,254,0,0.9)');
+      drawWordmark(ctx, 0, 0, 0.5 * k, BRAND.accent);
       ctx.restore();
     }
   });
@@ -215,10 +215,10 @@ function makeLed(w, h, home, away, pxW = 2048) {
   t.wrapS = THREE.RepeatWrapping;
   const teamName = (t) => (t.city ? t.city + ' ' : '') + t.name;
   const msgs = [
-    [home.brand ? BRAND : teamName(home).toUpperCase(), home.brand ? BRAND.yellow : home.primary],
+    [home.brand ? BRAND : teamName(home).toUpperCase(), home.brand ? BRAND.accent : home.primary],
     ['3 ON 3 · FULL COURT', '#ffffff'],
     away.brand ? ['HOOPS', '#ffffff'] : [teamName(away).toUpperCase(), away.primary],
-    [BRAND, BRAND.yellow],
+    [BRAND, BRAND.accent],
   ];
   const draw = (hot = 0) => {
     g.fillStyle = '#05060a';
@@ -435,7 +435,7 @@ export async function buildArena(scene, renderer, { home, away, quality }) {
   const mkW = quality === 'low' || renderer.capabilities.maxTextureSize < 4096 ? 1024 : 2048;
   mkCanvas.width = mkW;
   mkCanvas.height = mkW * MK.l / MK.w;
-  const logoImg = await loadImage(home.brand ? 'img/livewire-mark.png' : home.logo);
+  const logoImg = await loadImage(home.brand ? BRAND.mark : home.logo);
   try {
     await Promise.all(['700', '800', '900'].map((w) => document.fonts.load(`${w} 40px "Saira Extra Condensed"`)));
   } catch (e) { /* fallback font */ }

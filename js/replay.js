@@ -578,7 +578,7 @@ export class Replay {
     }
   }
 
-  // the tracer: a Livewire-yellow ribbon along the ball's flight since the release
+  // the tracer: an accent-coloured ribbon along the ball's flight since the release
   trace(S) {
     if (!this.tracer) this.makeTracer();
     const M = this.tracer;
@@ -591,7 +591,7 @@ export class Replay {
     while (k < n - 1 && path[k + 1].t <= t) k++;
     const head = t < path[n - 1].t ? this.ball.mesh.position : path[n - 1].p;
     const pos = M.geometry.attributes.position.array, col = M.geometry.attributes.color.array;
-    const cam = this.camera.position, yel = this.yel || (this.yel = new THREE.Color(BRAND.yellow));
+    const cam = this.camera.position, yel = this.yel || (this.yel = new THREE.Color(BRAND.accent));
     const p = _p, prev = _q, along = _r, side = _s;
     prev.copy(path[0].p);
     for (let i = 0; i < n; i++) {
@@ -697,7 +697,7 @@ export class Replay {
         if (!chunks.length) return;
         const blob = new Blob(chunks, { type: mime });
         const ext = mime.includes('mp4') ? 'mp4' : 'webm';
-        this.clip = { blob, name: `livewire-hoops-${h.type}.${ext}` };
+        this.clip = { blob, name: `${BRAND.name.toLowerCase()}-hoops-${h.type}.${ext}` };
         if (this.onClip) this.onClip(this.clip);
       };
       mr.start(250);
@@ -731,7 +731,7 @@ export class Replay {
       g.font = '800 28px "Saira Extra Condensed", "Arial Narrow", sans-serif';
       const uw = g.measureText(w.num).width;
       const bw = nw + uw + 50;
-      g.fillStyle = BRAND.yellow;
+      g.fillStyle = BRAND.accent;
       g.beginPath(); g.moveTo(x, y); g.lineTo(x + bw, y); g.lineTo(x + bw - 14, y + 48); g.lineTo(x, y + 48); g.closePath(); g.fill();
       g.fillStyle = '#111';
       g.font = '900 40px "Saira Extra Condensed", "Arial Narrow", sans-serif'; g.fillText(w.name, x + 16, y + 26);
@@ -743,15 +743,15 @@ export class Replay {
     }
     if (P.slo) {
       g.font = '800 20px "Saira Extra Condensed", "Arial Narrow", sans-serif';
-      g.textBaseline = 'middle'; g.fillStyle = BRAND.yellow;
+      g.textBaseline = 'middle'; g.fillStyle = BRAND.accent;
       const tx = 'SUPER SLO-MO';
       g.fillText(tx, W - g.measureText(tx).width - 28, 54 + 30);
     }
-    // broadcast dressing: letterbox, Livewire mark, replay tag, score, address
+    // broadcast dressing: letterbox, brand mark, replay tag, score, address
     g.fillStyle = '#000';
     g.fillRect(0, 0, W, 54); g.fillRect(0, H - 54, W, 54);
     if (!this._wm) this._wm = new Path2D(BRAND.wordmark.d);
-    g.save(); g.translate(28, 16); g.scale(22 / BRAND.wordmark.h, 22 / BRAND.wordmark.h); g.fillStyle = BRAND.yellow; g.fill(this._wm); g.restore();
+    g.save(); g.translate(28, 16); g.scale(22 / BRAND.wordmark.h, 22 / BRAND.wordmark.h); g.fillStyle = BRAND.accent; g.fill(this._wm); g.restore();
     g.font = '800 26px "Saira Extra Condensed", "Arial Narrow", sans-serif';
     g.textBaseline = 'middle';
     g.fillStyle = '#ffffff';
@@ -759,13 +759,13 @@ export class Replay {
     const tag = r.h.type === 'dunk' ? 'REPLAY · SLAM' : 'REPLAY · FROM DEEP';
     g.font = '800 22px "Saira Extra Condensed", "Arial Narrow", sans-serif';
     const tw = g.measureText(tag).width;
-    g.fillStyle = BRAND.yellow; g.fillRect(W - tw - 52, 12, tw + 28, 32);
+    g.fillStyle = BRAND.accent; g.fillRect(W - tw - 52, 12, tw + 28, 32);
     g.fillStyle = '#111'; g.fillText(tag, W - tw - 38, 29);
     const sc = this.game.score;
     g.fillStyle = '#ffffff'; g.font = '700 22px "Saira Extra Condensed", "Arial Narrow", sans-serif';
     g.fillText(`${r.h.names[0]} ${sc[0]}  –  ${sc[1]} ${r.h.names[1]}`, 28, H - 27);
     g.fillStyle = 'rgba(255,255,255,0.75)';
-    const url = 'livewire.hoops.gamify.com';
+    const url = BRAND.url;
     g.fillText(url, W - g.measureText(url).width - 28, H - 27);
   }
 
@@ -783,7 +783,7 @@ export async function shareClip(clip) {
   if (!clip) return;
   const file = new File([clip.blob], clip.name, { type: clip.blob.type });
   if (navigator.canShare && navigator.canShare({ files: [file] })) {
-    try { await navigator.share({ files: [file], title: 'Livewire Hoops', text: 'Livewire Hoops · livewire.hoops.gamify.com' }); return 'shared'; } catch (e) { if (e && e.name === 'AbortError') return 'cancelled'; }
+    try { await navigator.share({ files: [file], title: BRAND.share, text: `${BRAND.share} · ${BRAND.url}` }); return 'shared'; } catch (e) { if (e && e.name === 'AbortError') return 'cancelled'; }
   }
   const a = document.createElement('a');
   a.href = URL.createObjectURL(clip.blob);
