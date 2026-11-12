@@ -4,6 +4,7 @@
 // them and sways them, so ~4,000 fans cost a single draw call.
 import * as THREE from 'three';
 import { COURT } from './court.js';
+import { brandFans } from './brandTex.js';
 
 // atlas layout (see raw/hardwood/gfx/fans_atlas.py)
 const ATLAS = { url: 'img/fans.webp', cols: 10, rows: 8, cardW: 1.2352, cardH: 1.55, headY: 0.3875, fans: 40, standers: 16 };
@@ -208,7 +209,8 @@ export function buildCrowd(group, { quality = 'med', ledTex = null } = {}) {
   geo.setAttribute('iShade', new THREE.InstancedBufferAttribute(iShade, 1));
   geo.instanceCount = n;
 
-  const tex = new THREE.TextureLoader().load(ATLAS.url);
+  const tex = new THREE.Texture();   // filled when the brand's atlas is ready (brandTex.js)
+  brandFans(ATLAS.url).then((u) => new THREE.TextureLoader().load(u, (t) => { tex.image = t.image; tex.needsUpdate = true; }));
   tex.colorSpace = THREE.SRGBColorSpace;
   tex.anisotropy = 4;
   const uniforms = {

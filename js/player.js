@@ -6,6 +6,7 @@ import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.j
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { loadMotion, MotionLayer, MOTION_URL } from './motion.js';
 import { modelProgress } from './progress.js';
+import { brandMap } from './brandTex.js';
 
 const gltfCache = new Map();
 export function loadModel(url) {
@@ -1063,8 +1064,9 @@ export class Player {
     this.root.traverse((o) => { if (o.isMesh) o.visible = false; });
     // look: the model's colour, surface-detail and roughness maps
     const src = mesh.material;
+    const map = await brandMap(url, src.map);   // the kit in this brand's colours
     const mat = new THREE.MeshStandardMaterial({
-      map: src.map, normalMap: src.normalMap || null, roughnessMap: src.roughnessMap || null,
+      map, normalMap: src.normalMap || null, roughnessMap: src.roughnessMap || null,
       roughness: src.roughnessMap ? 1 : 0.7, metalness: 0, envMapIntensity: 0.45,
     });
     if (src.normalMap) mat.normalScale.copy(src.normalScale);

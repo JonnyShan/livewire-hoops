@@ -35,9 +35,9 @@ export class Presenter {
     this.t = 0;
     this.statusFlash = 0;
     this.hotGlow = 0;
-    // the ball glows Livewire yellow when it's in a hot hand
+    // the ball glows in the brand accent when it's in a hot hand
     const m = ball.mesh.material;
-    m.emissive = new THREE.Color(BRAND.yellow);
+    m.emissive = new THREE.Color(BRAND.accent);
     m.emissiveIntensity = 0;
   }
 

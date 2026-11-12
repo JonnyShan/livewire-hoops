@@ -184,7 +184,7 @@ export function startDebug(hw) {
     if (!b || b.disabled) return;
     if (b.dataset.a === 'min') { el.classList.toggle('min'); b.textContent = el.classList.contains('min') ? 'Show' : 'Hide'; render(); return; }
     if (b.dataset.a === 'bench') { runBench(); return; }
-    const text = `Livewire Hoops debug\n${head.textContent}\n${lines(true).join('\n')}`;
+    const text = `Hoops debug\n${head.textContent}\n${lines(true).join('\n')}`;
     let ok = false;
     try { await navigator.clipboard.writeText(text); ok = true; } catch (err) {
       const t = document.createElement('textarea');

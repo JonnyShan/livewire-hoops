@@ -28,7 +28,7 @@ const isTouch = matchMedia('(pointer: coarse)').matches || 'ontouchstart' in win
 const settings = { quality: 'auto', sound: true, vib: true };
 try { Object.assign(settings, JSON.parse(localStorage.getItem('hardwood.settings') || '{}')); } catch (e) { /* storage blocked */ }
 const save = () => { try { localStorage.setItem('hardwood.settings', JSON.stringify(settings)); } catch (e) { /* storage blocked */ } };
-// the two kits: Livewire yellow (you) and Livewire black (the CPU), three a side
+// the two brand kits: blue (you) and graphite (the CPU), three a side
 const HOME = TEAMS[0], AWAY = TEAMS[1];
 const DIFF = DIFFICULTY.pro, MATE_DIFF = DIFFICULTY.pro;
 const qualityTier = () => settings.quality === 'auto' ? (isTouch ? 'med' : 'high') : settings.quality;
@@ -358,7 +358,7 @@ function hideLoader() {
   if (l.hidden || l.classList.contains('out')) return;
   l.classList.add('out');
   setTimeout(() => { if (l.classList.contains('out')) { l.hidden = true; ldBall.pause(); } }, 480);
-  // the title shows through as the loading screen fades: build the Livewire mark in as it does
+  // the title shows through as the loading screen fades: build the brand mark in as it does
   if (!$('scrTitle').hidden) setTimeout(() => playMark($('scrTitle'), 'build'), 200);
 }
 $('goPlay').onclick = async () => {
