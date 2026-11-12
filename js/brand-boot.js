@@ -31,6 +31,7 @@
   function mix(a, b, t) { var x = rgb(a), y = rgb(b); return hex(x.map(function (v, i) { return v + (y[i] - v) * t; })); }
   function lum(h) { var c = rgb(h); return (0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2]) / 255; }
   function pack(id) {
+    if (id === 'draft') { try { var d = localStorage.getItem('gamify-draft:basketball'); if (d) return JSON.parse(d); } catch (e) {} }
     try { var x = new XMLHttpRequest(); x.open('GET', 'brands/' + id + '/brand.json', false); x.send();
       return x.status >= 200 && x.status < 300 ? JSON.parse(x.responseText) : null; } catch (e) { return null; }
   }
